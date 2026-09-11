@@ -1,0 +1,41 @@
+INFO:     Started server process [29659]
+INFO:     Waiting for application startup.
+{"app": "production-rag", "version": "1.0.0", "event": "Starting up", "logger": "app.main", "level": "info", "timestamp": "2026-09-08T12:19:13.408072Z"}
+{"path": "data/rag.db", "event": "Initialising database", "logger": "app.core.database", "level": "info", "timestamp": "2026-09-08T12:19:13.408407Z"}
+{"event": "Database ready", "logger": "app.core.database", "level": "info", "timestamp": "2026-09-08T12:19:13.427930Z"}
+{"event": "Warming up embedding model...", "logger": "app.main", "level": "info", "timestamp": "2026-09-08T12:19:13.428207Z"}
+{"model": "all-MiniLM-L6-v2", "event": "Loading embedding model", "logger": "app.ingestion.embedder", "level": "info", "timestamp": "2026-09-08T12:19:13.428422Z"}
+{"event": "No device provided, using cpu", "logger": "sentence_transformers.base.model", "level": "info", "timestamp": "2026-09-08T12:19:13.429721Z"}
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+{"event": "Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.", "logger": "huggingface_hub.utils._http", "level": "warning", "timestamp": "2026-09-08T12:19:17.375639Z"}
+{"event": "Loading SentenceTransformer model from sentence-transformers/all-MiniLM-L6-v2.", "logger": "sentence_transformers.base.model", "level": "info", "timestamp": "2026-09-08T12:19:17.995287Z"}
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights:   3%|▎         | 3/103 [00:00<00:10,  9.32it/s]Loading weights:  30%|███       | 31/103 [00:00<00:00, 87.36it/s]Loading weights:  45%|████▍     | 46/103 [00:00<00:00, 80.77it/s]Loading weights:  56%|█████▋    | 58/103 [00:01<00:01, 44.08it/s]Loading weights:  64%|██████▍   | 66/103 [00:01<00:00, 49.18it/s]Loading weights:  72%|███████▏  | 74/103 [00:01<00:00, 43.46it/s]Loading weights: 100%|██████████| 103/103 [00:01<00:00, 63.79it/s]
+{"dimension": 384, "event": "Embedding model loaded", "logger": "app.ingestion.embedder", "level": "info", "timestamp": "2026-09-08T12:19:31.534368Z"}
+{"event": "Embedding model ready", "logger": "app.main", "level": "info", "timestamp": "2026-09-08T12:19:34.627986Z"}
+{"event": "Application startup complete", "logger": "app.main", "level": "info", "timestamp": "2026-09-08T12:19:34.628339Z"}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+{"filename": "tcp-port-scanner-guide.pdf", "path": "data/uploads/c0c3b472-5445-4d87-be05-e71530ee38e1_tcp-port-scanner-guide.pdf", "event": "File saved", "logger": "app.api.upload", "level": "info", "timestamp": "2026-09-08T12:22:26.410979Z"}
+{"doc_id": "921b67de-ee56-4a68-a2d2-d59b055c36fc", "filename": "tcp-port-scanner-guide.pdf", "event": "Document inserted", "logger": "app.storage.sqlite", "level": "info", "timestamp": "2026-09-08T12:22:27.387487Z"}
+{"doc_id": "921b67de-ee56-4a68-a2d2-d59b055c36fc", "event": "Ingestion: loading PDF", "logger": "app.services.document_service", "level": "info", "timestamp": "2026-09-08T12:22:27.388312Z"}
+{"path": "data/uploads/c0c3b472-5445-4d87-be05-e71530ee38e1_tcp-port-scanner-guide.pdf", "event": "Loading PDF", "logger": "app.ingestion.pdf_loader", "level": "info", "timestamp": "2026-09-08T12:22:27.389774Z"}
+{"doc_id": "921b67de-ee56-4a68-a2d2-d59b055c36fc", "error": "document closed", "event": "Ingestion failed", "logger": "app.services.document_service", "level": "error", "timestamp": "2026-09-08T12:22:27.939557Z"}
+/home/jteckz7/Downloads/production-rag/backend/.venv/lib/python3.14/site-packages/fastapi/routing.py:352: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await dependant.call(**values)
+{"filename": "Microprocessor lab manual.pdf", "path": "data/uploads/af6a2f3d-faa1-447b-8d94-5fd1023f4f51_Microprocessor lab manual.pdf", "event": "File saved", "logger": "app.api.upload", "level": "info", "timestamp": "2026-09-08T12:22:42.989868Z"}
+{"doc_id": "85fee447-59f4-46c2-b36c-06654975c78c", "filename": "Microprocessor lab manual.pdf", "event": "Document inserted", "logger": "app.storage.sqlite", "level": "info", "timestamp": "2026-09-08T12:22:43.267642Z"}
+{"doc_id": "85fee447-59f4-46c2-b36c-06654975c78c", "event": "Ingestion: loading PDF", "logger": "app.services.document_service", "level": "info", "timestamp": "2026-09-08T12:22:43.268319Z"}
+{"path": "data/uploads/af6a2f3d-faa1-447b-8d94-5fd1023f4f51_Microprocessor lab manual.pdf", "event": "Loading PDF", "logger": "app.ingestion.pdf_loader", "level": "info", "timestamp": "2026-09-08T12:22:43.269085Z"}
+{"doc_id": "85fee447-59f4-46c2-b36c-06654975c78c", "error": "document closed", "event": "Ingestion failed", "logger": "app.services.document_service", "level": "error", "timestamp": "2026-09-08T12:22:43.450413Z"}
+{"filename": "yiora-branding-complete.pdf", "path": "data/uploads/8b81d152-1406-4a7b-a9be-3199cd7f16ec_yiora-branding-complete.pdf", "event": "File saved", "logger": "app.api.upload", "level": "info", "timestamp": "2026-09-08T12:22:57.835179Z"}
+{"doc_id": "d4e8b5fd-523e-4271-8000-c3a92fe7320d", "filename": "yiora-branding-complete.pdf", "event": "Document inserted", "logger": "app.storage.sqlite", "level": "info", "timestamp": "2026-09-08T12:22:58.035721Z"}
+{"doc_id": "d4e8b5fd-523e-4271-8000-c3a92fe7320d", "event": "Ingestion: loading PDF", "logger": "app.services.document_service", "level": "info", "timestamp": "2026-09-08T12:22:58.036395Z"}
+{"path": "data/uploads/8b81d152-1406-4a7b-a9be-3199cd7f16ec_yiora-branding-complete.pdf", "event": "Loading PDF", "logger": "app.ingestion.pdf_loader", "level": "info", "timestamp": "2026-09-08T12:22:58.037310Z"}
+{"doc_id": "d4e8b5fd-523e-4271-8000-c3a92fe7320d", "error": "document closed", "event": "Ingestion failed", "logger": "app.services.document_service", "level": "error", "timestamp": "2026-09-08T12:22:58.087205Z"}
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"event": "Application shutting down", "logger": "app.main", "level": "info", "timestamp": "2026-09-08T12:23:43.843604Z"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29659]
+/usr/lib/python3.14/multiprocessing/resource_tracker.py:475: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-29659-mi0w__vt'}
+  warnings.warn(
