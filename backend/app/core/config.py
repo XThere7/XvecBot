@@ -65,11 +65,26 @@ class Settings(BaseSettings):
     rrf_k: int = 60
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    llm_provider: str = "ollama"          # "ollama" | "llama_cpp"
+    llm_provider: str = "ollama"          # "ollama" | "openvino" | "mock"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
+    ollama_model: str = "qwen2.5:3b"
+    # How long to wait for Ollama per request. A 7B+ model on CPU with a long
+    # RAG context can need minutes for the first token — 120s was too short.
+    ollama_timeout: float = 300.0
+    # Context window passed to Ollama (num_ctx). Smaller = less RAM + faster.
+    ollama_num_ctx: int = 4096
+    # Keep the model resident in VRAM/RAM between requests ("5m", "0" = unload).
+    ollama_keep_alive: str = "5m"
     llm_max_tokens: int = 1024
     llm_temperature: float = 0.1
+
+    # ── LLM (OpenVINO) ───────────────────────────────────────────────────────
+    # Pre-quantized INT4 IR model (Hugging Face ID or local dir). 3B ≈ 2 GB RAM,
+    # 7B ≈ 4–5 GB. A 32B model needs ~18 GB+ even as INT4 — it will NOT fit
+    # alongside the OS on an 11 GB machine, so don't point this at a 32B IR.
+    openvino_model_id: str = "OpenVINO/Qwen2.5-3B-Instruct-int4-ov"
+    openvino_device: str = "CPU"           # "CPU" | "GPU" (Intel iGPU) | "AUTO"
+    openvino_max_new_tokens: int = 512
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     # Include loopback variants + current LAN IP. The regex in main.py covers

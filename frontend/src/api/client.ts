@@ -87,6 +87,8 @@ export function streamQuery(
   const controller = new AbortController();
 
   (async () => {
+    let tokensReceived = 0;
+    let doneReceived = false;
     try {
       const res = await fetch(`${BASE_URL}/query/stream`, {
         method: "POST",
@@ -117,12 +119,27 @@ export function streamQuery(
           const raw = line.slice(6).trim();
           if (!raw) continue;
           const event: StreamEvent = JSON.parse(raw);
+          if (event.error) {
+            // Backend failure (Ollama down / model missing / OOM / timeout).
+            // Surface it instead of leaving an empty assistant bubble.
+            throw new Error(event.error);
+          }
           if (event.done) {
+            doneReceived = true;
             onDone(event);
           } else if (event.token) {
+            tokensReceived += 1;
             onToken(event.token);
           }
         }
+      }
+
+      if (!doneReceived && !controller.signal.aborted) {
+        throw new Error(
+          tokensReceived === 0
+            ? "The assistant returned no response. The LLM backend may be down, out of memory, or still loading — check backend logs and GET /api/v1/query/llm/status."
+            : "The response stream ended unexpectedly before completing."
+        );
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -144,4 +161,22 @@ export async function checkHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export interface LlmStatus {
+  provider: string;
+  ok: boolean;
+  configured_model?: string;
+  model?: string;
+  reachable?: boolean;
+  model_available?: boolean;
+  available_models?: string[];
+  error?: string;
+  [key: string]: unknown;
+}
+
+/** Query GET /api/v1/query/llm/status — call this when chat returns no text. */
+export async function checkLlmStatus(): Promise<LlmStatus> {
+  const res = await fetch(`${BASE_URL}/query/llm/status`, { headers: headers() });
+  return handleResponse<LlmStatus>(res);
 }

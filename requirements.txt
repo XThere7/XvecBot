@@ -33,6 +33,11 @@ httpx==0.28.0
 # ── Logging ───────────────────────────────────────────────────────────────────
 structlog==24.4.0
 
+# ── OpenVINO LLM backend (optional, NOT installed by default) ────────────────
+# For LLM_PROVIDER=openvino (low-RAM local inference):
+#   pip install -r backend/requirements-openvino.txt
+#   python scripts/download_openvino_model.py
+
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0

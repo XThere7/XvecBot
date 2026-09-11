@@ -168,6 +168,35 @@ async def ask_stream(
 
 
 @router.get(
+    "/llm/status",
+    summary="LLM backend diagnostics (provider, model, reachability)",
+)
+async def llm_status(
+    _: str = Depends(verify_api_key),
+):
+    """
+    Check whether the configured LLM backend can actually answer.
+    Never raises — always returns a JSON status dict, e.g.:
+
+        {"provider": "ollama", "ok": true, "configured_model": "qwen2.5:3b",
+         "reachable": true, "model_available": true, ...}
+
+    If "ok" is false, the "error" field tells you the exact fix
+    (e.g. `ollama pull qwen2.5:3b`). Check this first when the chat UI
+    returns no text.
+    """
+    try:
+        llm = build_generator()
+        check = getattr(llm, "check_health", None)
+        if check is None:
+            return {"provider": type(llm).__name__, "ok": True}
+        return await check()
+    except Exception as exc:
+        log.error("LLM status check failed", error=str(exc))
+        return {"provider": "unknown", "ok": False, "error": str(exc)}
+
+
+@router.get(
     "/conversations/{conversation_id}",
     response_model=ConversationHistory,
     summary="Retrieve full conversation history",
