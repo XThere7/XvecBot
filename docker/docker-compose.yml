@@ -29,16 +29,3 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
-
-  # Optional: Ollama LLM server (uncomment to run locally)
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: rag-ollama
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   ports:
-  #     - "11434:11434"
-  #   restart: unless-stopped
-
-# volumes:
-#   ollama_data:

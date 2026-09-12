@@ -32,8 +32,11 @@ log = get_logger(__name__)
 async def lifespan(app: FastAPI):
     """
     Application lifespan events.
-    startup:  Initialise DB schema, warm up embedding model.
+    startup:  Initialise DB schema + warm up the embedding model.
     shutdown: Clean up resources.
+
+    NOTE: the LLM is OpenRouter (cloud API) — there is no local model to
+    preload, warm up, or health-ping at startup.
     """
     log.info("Starting up", app=settings.app_name, version=settings.app_version)
 

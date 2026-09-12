@@ -21,8 +21,8 @@ cd ..
 
 # 3. Copy .env if not present
 if [ ! -f .env ]; then
-    cp .env .env
-    echo "[3/4] Created .env — update API_KEY and OLLAMA_MODEL as needed."
+    cp .env.example .env
+    echo "[3/4] Created .env from .env.example — set API_KEY and OPENROUTER_API_KEY."
 else
     echo "[3/4] .env already exists, skipping."
 fi
@@ -32,7 +32,7 @@ mkdir -p data/uploads data/processed data/embeddings
 echo "[4/4] Data directories ready."
 
 echo ""
-echo "Setup complete! Start the dev servers:"
+echo "Setup complete! LLM is OpenRouter (cloud API — no local model needed):"
+echo "  1. Get a key at https://openrouter.ai/keys and set OPENROUTER_API_KEY in .env"
 echo "  Backend:  cd backend && source .venv/bin/activate && uvicorn app.main:app --reload"
 echo "  Frontend: cd frontend && npm run dev"
-echo "  Ollama:   ollama serve  (then: ollama pull llama3.2)"
