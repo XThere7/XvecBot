@@ -1,0 +1,42 @@
+# ── Secrets: never commit real keys ──────────────────────────────────────────
+# Covers root .env, frontend/.env, backend/.env (any depth).
+# Template files (.env.example) are safe — the pattern below does NOT match them.
+.env
+.env.local
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ── Databases & runtime user data: never commit ─────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+backend/data/
+models/
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+pip-tmp/
+
+# ── Node / frontend build ────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+
+# ── OS junk ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.env
+.env

@@ -1,7 +1,8 @@
 # Production RAG with Citations
 
 > PDF Q&A bot with hybrid search, cross-encoder reranking, grounding, and page-level citations.
-> Built with LangGraph + FastAPI + SQLite-vec + React + Vite + Ollama / OpenVINO.
+> Built with LangGraph + FastAPI + SQLite-vec + React + Vite.
+> Sole LLM engine: OpenRouter cloud API (`inclusionai/ling-3.0-flash-fin:free`).
 
 ---
 
@@ -23,7 +24,7 @@
                     │                    │PyMuPDF   │       │ retrieve_node     │ ← Hybrid BM25 + vector (RRF)
                     │                    │Chunker   │       │ rerank_node       │ ← CrossEncoder
                     │                    │Embedder  │       │ grounding_node    │ ← Verify context
-                    │                    │Indexer   │       │ generate_node     │ ← Ollama / OpenVINO / mock
+                    │                    │Indexer   │       │ generate_node     │ ← OpenRouter (cloud)
                     │                    └──────────┘       │ citation_node     │ ← Page refs
                     │                          │            └───────────────────┘
                     │                          ▼                     │
@@ -32,19 +33,17 @@
                     └── chat streams back token-by-token (SSE)
 ```
 
-### LLM backends (`LLM_PROVIDER` in `.env`)
+### LLM backend: OpenRouter (only provider)
 
-| Provider | How it runs | RAM (≈) | When to use |
-|----------|-------------|---------|-------------|
-| `ollama` (default) | Local Ollama server (`:11434`), e.g. `qwen2.5:3b` | ~2.5 GB (3B) / ~5 GB (7B) | Default dev setup |
-| `openvino` | INT4 OpenVINO IR on CPU/iGPU, no Ollama needed | ~2 GB (3B INT4) / ~4–5 GB (7B INT4) | Lowest memory footprint |
-| `mock` | Deterministic stub answer | ~0 | Unit tests / UI dev without models |
+All generation goes through the OpenAI-compatible chat-completions endpoint:
 
-> ⚠️ **Model-size warning (measured on an 11 GB RAM, i5-8250U box):**
-> Qwen2.5 sizes are **0.5 / 1.5 / 3 / 7 / 14 / 32 / 72B — there is no `qwen2.5:35b`**
-> (that name means the 32B variant). A 32B Q4 model needs **~20 GB RAM**
-> (~18 GB+ even as OpenVINO INT4) and will push this machine to **90%+ RAM,
-> hang, and never answer**. Stay on **3B** (comfortable) or **7B max**.
+```
+POST https://openrouter.ai/api/v1/chat/completions
+```
+
+There are no local inference backends and no provider switching — `build_generator()`
+returns an `OpenRouterGenerator` unconditionally. (`MockGenerator` exists only as a
+test stub and is never wired into the app.)
 
 ## Stack
 
@@ -58,8 +57,7 @@
 | Keyword search | BM25 (rank-bm25) |
 | Relational DB | SQLite + aiosqlite |
 | Vector DB | sqlite-vec |
-| LLM (default) | Qwen2.5 via Ollama |
-| LLM (low-RAM) | Qwen2.5-Instruct INT4 via OpenVINO |
+| LLM | OpenRouter cloud API (`inclusionai/ling-3.0-flash-fin:free`) via httpx |
 | Frontend | React 18 + Vite + TypeScript |
 | Containerisation | Docker + docker-compose |
 
@@ -69,11 +67,9 @@
 
 ### Prerequisites
 
-- Python 3.11+ (3.10–3.13 if you plan to use the OpenVINO backend — OpenVINO
-  does not publish wheels for every brand-new Python release)
+- Python 3.10–3.13
 - Node.js 20+
-- [Ollama](https://ollama.ai) running locally (only for `LLM_PROVIDER=ollama`)
-- ~4 GB free RAM for the 3B models (see table above)
+- An OpenRouter API key (see below) — no local model, no GPU, no ~20 GB download
 
 ### 1. Clone and setup
 
@@ -83,15 +79,18 @@ cd production-rag
 bash scripts/setup.sh        # backend .venv + frontend node_modules + data dirs
 ```
 
-### 2. Start Ollama + pull a model (skip if using OpenVINO — see below)
+### 2. Getting Your OpenRouter API Key
+
+1. Go to [https://openrouter.ai/keys](https://openrouter.ai/keys) and sign in.
+2. Click **Create API Key**, give it a name (e.g. `rag-project`), and copy the key
+   (it starts with `sk-or-v1-...`). Top up credits if needed at
+   [https://openrouter.ai/credits](https://openrouter.ai/credits) — the
+   `inclusionai/ling-3.0-flash-fin:free` model is free, but an account is still required.
+3. Paste it into `.env`:
 
 ```bash
-ollama serve
-ollama pull qwen2.5:3b       # recommended here; 7B max on 11 GB RAM
-ollama list                  # confirm what you have
+OPENROUTER_API_KEY=sk-or-v1-paste-your-key-here
 ```
-
-> `OLLAMA_MODEL` in `.env` must match one of these names exactly.
 
 ### 3. Start backend
 
@@ -127,8 +126,7 @@ docker-compose up --build
 # → API:      http://localhost:8000
 ```
 
-Ollama is commented out in `docker-compose.yml` by default — uncomment the
-`ollama` service to run it containerised, and point `OLLAMA_BASE_URL` at it.
+Make sure `OPENROUTER_API_KEY` is set in the root `.env` (it is passed through via `env_file`).
 
 ---
 
@@ -136,16 +134,16 @@ Ollama is commented out in `docker-compose.yml` by default — uncomment the
 
 ```
 production-rag/
-├── .env                        # backend config (API key, LLM, CORS, chunking…)
+├── .env                        # backend config (API key, OpenRouter, CORS, chunking…)
+├── .env.example                # template — copy to .env and fill in OPENROUTER_API_KEY
 ├── backend/
-│   ├── requirements-openvino.txt   # optional OpenVINO deps (NOT installed by default)
 │   └── app/
 │       ├── api/          # HTTP endpoints (upload, query, health)
 │       ├── core/         # Config, logging, database init
 │       ├── ingestion/    # PDF → chunks → embeddings → index
 │       ├── retrieval/    # BM25, vector, hybrid (RRF), reranker
 │       ├── graph/        # LangGraph state, nodes, workflow
-│       ├── llm/          # Prompts + generators (ollama / openvino / mock)
+│       ├── llm/          # Prompts + OpenRouter generator (+ Mock stub for tests)
 │       ├── services/     # Business logic (document & query)
 │       ├── models/       # Pydantic schemas
 │       ├── storage/      # SQLite + sqlite-vec adapters
@@ -155,10 +153,9 @@ production-rag/
 │   ├── hooks/        # useChat (streaming), useDocuments
 │   ├── api/          # Typed API client (all HTTP goes through here)
 │   └── types/        # TypeScript interfaces
-├── models/             # OpenVINO IR downloads (created by the download script)
 ├── data/               # uploads/, processed/, embeddings/
 ├── docker/             # Dockerfiles + docker-compose + nginx
-└── scripts/            # setup.sh, test.sh, ingest_sample.py, download_openvino_model.py
+└── scripts/            # setup.sh, test.sh, ingest_sample.py
 ```
 
 ---
@@ -196,14 +193,13 @@ curl -X POST http://localhost:8000/api/v1/query/stream \
 
 ```bash
 curl http://localhost:8000/api/v1/query/llm/status -H "X-API-Key: dev-key"
-# {"provider":"ollama","ok":true,"configured_model":"qwen2.5:3b",
-#  "reachable":true,"model_available":true,
-#  "available_models":["qwen2.5:7b","qwen2.5:3b","llama3.2:3b"]}
+# {"provider":"openrouter","ok":true,
+#  "model":"inclusionai/ling-3.0-flash-fin:free",...}
 ```
 
 If `"ok": false`, the `"error"` field tells you the exact fix
-(e.g. ``ollama pull qwen2.5:3b``). The chat UI now surfaces these errors
-instead of showing an empty bubble.
+(e.g. missing/invalid key, no credits, rate limit, bad model ID). The chat UI
+surfaces these errors instead of showing an empty bubble.
 
 ---
 
@@ -213,11 +209,10 @@ instead of showing an empty bubble.
 bash scripts/test.sh
 # Or directly:
 cd backend
-LLM_PROVIDER=mock PYTHONPATH=. .venv/bin/python -m pytest app/tests/ -v
+PYTHONPATH=. .venv/bin/python -m pytest app/tests/ -v
 ```
 
-Tests use `MockGenerator`, so no Ollama/OpenVINO is needed. (The full suite
-loads the embedding model once — expect ~40 s on first run.)
+Tests use `MockGenerator`, so no OpenRouter API key is needed.
 
 ---
 
@@ -232,17 +227,11 @@ loads the embedding model once — expect ~40 s on first run.)
 | `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | CrossEncoder model |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `512` / `64` | Chunking (tokens) |
 | `RETRIEVAL_TOP_K` / `RERANK_TOP_K` | `20` / `5` | Hybrid candidates / final chunks |
-| `LLM_PROVIDER` | `ollama` | `ollama`, `openvino`, or `mock` |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server address |
-| `OLLAMA_MODEL` | `qwen2.5:3b` | Must be pulled (`ollama list`); no `35b` exists |
-| `OLLAMA_TIMEOUT` | `300` | Seconds to wait for Ollama per request (120 was too short for CPU inference) |
-| `OLLAMA_NUM_CTX` | `4096` | Context window (`num_ctx`) — smaller = less RAM, faster first token |
-| `OLLAMA_KEEP_ALIVE` | `5m` | Keep model resident between requests |
+| `OPENROUTER_API_KEY` | _(empty — you fill it in)_ | **Required.** Secret key from https://openrouter.ai/keys. Missing key raises a clear error on first request, never on import |
+| `OPENROUTER_MODEL` | `inclusionai/ling-3.0-flash-fin:free` | Model ID sent to OpenRouter |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter API base URL |
 | `LLM_MAX_TOKENS` | `512` | Max generated tokens per answer |
 | `LLM_TEMPERATURE` | `0.1` | Sampling temperature |
-| `OPENVINO_MODEL_ID` | `OpenVINO/Qwen2.5-3B-Instruct-int4-ov` | HF ID or local IR dir (used when `LLM_PROVIDER=openvino`) |
-| `OPENVINO_DEVICE` | `CPU` | `CPU`, `GPU` (Intel iGPU), or `AUTO` |
-| `OPENVINO_MAX_NEW_TOKENS` | `512` | Max generated tokens (OpenVINO path) |
 | `ALLOWED_ORIGINS` | localhost/127.0.0.1/192.168.1.27 `:5173`/`:3000` | Explicit CORS origins (a LAN regex in `main.py` also covers any `192.168.x.x`/`10.x.x.x`) |
 
 ### Frontend — `frontend/.env`
@@ -256,49 +245,23 @@ loads the embedding model once — expect ~40 s on first run.)
 
 ## Model Setup
 
-### Option A — Ollama (default, simplest)
+There is no local model to download. The backend calls OpenRouter over HTTPS:
 
-```bash
-ollama serve
-ollama pull qwen2.5:3b
-# .env: LLM_PROVIDER=ollama / OLLAMA_MODEL=qwen2.5:3b
-```
+1. Create a key at [https://openrouter.ai/keys](https://openrouter.ai/keys).
+2. Set in `.env`:
+   ```env
+   OPENROUTER_API_KEY=sk-or-v1-...
+   OPENROUTER_MODEL=inclusionai/ling-3.0-flash-fin:free
+   OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+   ```
+3. Restart the backend, then verify:
+   ```bash
+   curl http://localhost:8000/api/v1/query/llm/status -H "X-API-Key: dev-key"
+   # {"provider":"openrouter","ok":true,...}
+   ```
 
-Lower `OLLAMA_NUM_CTX` (e.g. `2048`) and `LLM_MAX_TOKENS` if RAM is tight;
-raise `OLLAMA_TIMEOUT` if big models answer slowly.
-
-### Option B — OpenVINO (lowest memory, no Ollama at runtime)
-
-OpenVINO runs a **pre-quantized INT4** model in IR format — it cannot use
-Ollama's GGUF files. Use the ready-made INT4 repos (no conversion needed):
-
-| Model | RAM | Verdict on 11 GB machine |
-|-------|-----|--------------------------|
-| `OpenVINO/Qwen2.5-3B-Instruct-int4-ov` | ~2 GB | ✅ recommended |
-| `OpenVINO/Qwen2.5-7B-Instruct-int4-ov` | ~4–5 GB | ⚠️ max, close other apps |
-| any 32B IR | ~18 GB+ | ❌ still OOMs — do not use |
-
-```bash
-# 1. Python 3.10–3.13 venv (OpenVINO wheels), then:
-pip install -r backend/requirements-openvino.txt
-
-# 2. Download the INT4 IR (~2 GB for 3B):
-python scripts/download_openvino_model.py
-# (7B: python scripts/download_openvino_model.py --model OpenVINO/Qwen2.5-7B-Instruct-int4-ov)
-
-# 3. .env:
-LLM_PROVIDER=openvino
-OPENVINO_MODEL_ID=./models/qwen2.5-3b-instruct-int4-ov
-OPENVINO_DEVICE=CPU        # or GPU for Intel iGPU, AUTO to let OpenVINO decide
-
-# 4. Restart backend, then verify:
-curl http://localhost:8000/api/v1/query/llm/status -H "X-API-Key: dev-key"
-# {"provider":"openvino","ok":true,...}
-```
-
-First OpenVINO answer compiles/optimises the graph — expect a slow first
-request, then fast ones (the model stays cached in-process). `nncf` is only
-needed if you quantize your own model; skip it for the `-int4-ov` repos.
+To switch models, change `OPENROUTER_MODEL` to any ID listed at
+[https://openrouter.ai/models](https://openrouter.ai/models) and restart.
 
 ---
 
@@ -316,24 +279,10 @@ needed if you quantize your own model; skip it for the `-int4-ov` repos.
 ## Switching the LLM
 
 The `LLMGenerator` is an abstract base class (`generate` + `stream`).
-To add a new backend:
-
-```python
-# backend/app/llm/generator.py
-class MyNewGenerator(LLMGenerator):
-    async def generate(self, query: str, context: str) -> str:
-        # Call your API here
-        ...
-
-    async def check_health(self) -> dict:
-        return {"provider": "mynew", "ok": True}
-
-# Add to build_generator():
-elif p == "mynew":
-    return MyNewGenerator()
-```
-
-Then set `LLM_PROVIDER=mynew` in `.env`.
+The production backend is `OpenRouterGenerator`
+(`backend/app/llm/openrouter_generator.py`), returned unconditionally by
+`build_generator()`. To point at a different OpenRouter model, just change
+`OPENROUTER_MODEL` — no code changes needed.
 
 ---
 
@@ -363,35 +312,15 @@ at startup), and tighten the origins for production.
 ### Chat returns no text (empty assistant bubble)
 
 1. Check diagnostics: `GET /api/v1/query/llm/status` (see API Reference).
-   - `"reachable": false` → `ollama serve` isn't running.
-   - `"model_available": false` → run `ollama pull <OLLAMA_MODEL>`.
-   - `"ok": false` → read `"error"`; the UI now shows this text.
-2. Check the backend terminal: Ollama errors are logged with actionable hints.
-3. A **32B/“35b” model on ~11 GB RAM** is the classic cause: RAM spikes to
-   90%+, generation stalls past the timeout, and nothing arrives. Use
-   `qwen2.5:3b` (or 7B max), or switch to the OpenVINO INT4 3B model.
-4. Slow first answer is normal: embedding + reranker + LLM weights load
-   lazily (~30–90 s on CPU). Watch the logs, not just the UI.
-
-### RAM spikes to 90%+ during generation
-
-- The model is too big for the machine — drop to `qwen2.5:3b` or
-  `LLM_PROVIDER=openvino` with the 3B INT4 IR (~2 GB).
-- Reduce `OLLAMA_NUM_CTX` (2048) and `LLM_MAX_TOKENS` (256–512): the KV-cache
-  scales with context × output length.
-- Note the backend also holds the embedding model (~90 MB), the reranker,
-  and a CUDA build of torch — some baseline usage is expected. `OLLAMA_KEEP_ALIVE=0`
-  unloads the LLM between requests at the cost of reload latency.
-
-### OpenVINO issues
-
-- `OpenVINO dependencies are not installed` → `pip install -r backend/requirements-openvino.txt`
-  in a Python 3.10–3.13 venv.
-- `has no OpenVINO IR (*.xml)` → run `python scripts/download_openvino_model.py`.
-- Empty/slow answers → first request compiles the graph; check RAM (use the
-  3B model) and that `OPENVINO_MODEL_ID` points at an `-int4-ov` repo/dir.
-- GGUF files (`.gguf` from Ollama) will **never** load in OpenVINO — that is
-  expected; download the IR instead.
+   - `"OPENROUTER_API_KEY is not set"` → paste your key into `.env` and restart.
+   - `HTTP 401` → bad/revoked key — create a new one at https://openrouter.ai/keys.
+   - `HTTP 402` → no credits — top up at https://openrouter.ai/credits.
+   - `HTTP 429` → rate-limited — wait and retry.
+   - `HTTP 404` → bad `OPENROUTER_MODEL` ID.
+   - The UI shows this error text directly.
+2. Check the backend terminal: LLM errors are logged with actionable hints.
+3. Slow first answer is normal on a cold start: the embedding + reranker weights
+   load lazily (~30–90 s on CPU). Watch the logs, not just the UI.
 
 ---
 

@@ -178,11 +178,11 @@ async def llm_status(
     Check whether the configured LLM backend can actually answer.
     Never raises — always returns a JSON status dict, e.g.:
 
-        {"provider": "ollama", "ok": true, "configured_model": "qwen2.5:3b",
-         "reachable": true, "model_available": true, ...}
+        {"provider": "openrouter", "ok": true,
+         "model": "inclusionai/ling-3.0-flash-fin:free", ...}
 
     If "ok" is false, the "error" field tells you the exact fix
-    (e.g. `ollama pull qwen2.5:3b`). Check this first when the chat UI
+    (e.g. set OPENROUTER_API_KEY). Check this first when the chat UI
     returns no text.
     """
     try:
@@ -193,7 +193,7 @@ async def llm_status(
         return await check()
     except Exception as exc:
         log.error("LLM status check failed", error=str(exc))
-        return {"provider": "unknown", "ok": False, "error": str(exc)}
+        return {"provider": "openrouter", "ok": False, "error": str(exc)}
 
 
 @router.get(

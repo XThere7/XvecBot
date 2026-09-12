@@ -120,7 +120,7 @@ export function streamQuery(
           if (!raw) continue;
           const event: StreamEvent = JSON.parse(raw);
           if (event.error) {
-            // Backend failure (Ollama down / model missing / OOM / timeout).
+            // Backend LLM failure (bad key / no credits / rate limit / bad model).
             // Surface it instead of leaving an empty assistant bubble.
             throw new Error(event.error);
           }
@@ -137,7 +137,7 @@ export function streamQuery(
       if (!doneReceived && !controller.signal.aborted) {
         throw new Error(
           tokensReceived === 0
-            ? "The assistant returned no response. The LLM backend may be down, out of memory, or still loading — check backend logs and GET /api/v1/query/llm/status."
+            ? "The assistant returned no response. The OpenRouter API key may be missing/invalid, out of credits, or rate-limited — check backend logs and GET /api/v1/query/llm/status."
             : "The response stream ended unexpectedly before completing."
         );
       }
@@ -166,11 +166,8 @@ export async function checkHealth(): Promise<boolean> {
 export interface LlmStatus {
   provider: string;
   ok: boolean;
-  configured_model?: string;
   model?: string;
-  reachable?: boolean;
-  model_available?: boolean;
-  available_models?: string[];
+  base_url?: string;
   error?: string;
   [key: string]: unknown;
 }
