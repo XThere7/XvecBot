@@ -17,6 +17,7 @@
 *.db-shm
 data/
 backend/data/
+uploads/
 # ML model weights at project root only — NOT the Python package backend/app/models/
 #/models/
 
