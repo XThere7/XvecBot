@@ -100,3 +100,43 @@ async def delete_embeddings_for_document(
     await db.commit()
     log.info("Embeddings deleted", document_id=document_id, count=len(chunk_ids))
     return len(chunk_ids)
+
+
+async def delete_by_workspace(
+    db: aiosqlite.Connection,
+    workspace_id: str,
+) -> int:
+    """
+    Delete all embeddings for chunks belonging to the given workspace.
+
+    Same pattern as delete_embeddings_for_document: resolve chunk_ids
+    relationally, then remove them from chunk_embeddings.
+
+    Linkage: chunks -> documents (FK) -> workspace_documents via filename.
+    (chunks.document_id references documents(id); workspace_documents rows
+    share the same original filename as their documents row.)
+    """
+    async with db.execute(
+        """SELECT c.id FROM chunks c
+           JOIN documents d ON d.id = c.document_id
+           JOIN workspace_documents wd ON wd.filename = d.filename
+           WHERE wd.workspace_id = ?""",
+        (workspace_id,),
+    ) as cur:
+        chunk_rows = await cur.fetchall()
+
+    chunk_ids = [r["id"] for r in chunk_rows]
+    if not chunk_ids:
+        return 0
+
+    placeholders = ",".join("?" * len(chunk_ids))
+    await db.execute(
+        f"DELETE FROM chunk_embeddings WHERE chunk_id IN ({placeholders})", chunk_ids
+    )
+    await db.commit()
+    log.info(
+        "Workspace embeddings deleted",
+        workspace_id=workspace_id,
+        count=len(chunk_ids),
+    )
+    return len(chunk_ids)
