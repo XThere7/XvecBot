@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     # ── Security ─────────────────────────────────────────────────────────────
     api_key: str = "dev-key"
+    SECRET_KEY: str = "change-this-in-production"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./data/rag.db"
