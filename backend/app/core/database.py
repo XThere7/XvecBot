@@ -79,6 +79,44 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
 );
 """
 
+# Phase 2 — multi-tenant tables (schemas also documented in models/workspace.py)
+CREATE_USERS = """
+CREATE TABLE IF NOT EXISTS users (
+    id              TEXT PRIMARY KEY,
+    email           TEXT UNIQUE NOT NULL,
+    hashed_password TEXT NOT NULL,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL
+);
+"""
+
+CREATE_WORKSPACES = """
+CREATE TABLE IF NOT EXISTS workspaces (
+    id             TEXT PRIMARY KEY,
+    name           TEXT NOT NULL,
+    description    TEXT,
+    system_prompt  TEXT NOT NULL DEFAULT 'You are a helpful assistant.',
+    owner_id       TEXT NOT NULL REFERENCES users(id),
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);
+"""
+
+CREATE_WORKSPACE_DOCUMENTS = """
+CREATE TABLE IF NOT EXISTS workspace_documents (
+    id            TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    filename      TEXT NOT NULL,
+    file_path     TEXT NOT NULL,
+    file_type     TEXT NOT NULL,
+    size_bytes    INTEGER NOT NULL DEFAULT 0,
+    status        TEXT NOT NULL DEFAULT 'uploaded',
+    chunk_count   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_docs_ws ON workspace_documents(workspace_id);
+"""
+
 
 async def init_db() -> None:
     """Create all tables. Safe to call on every startup (IF NOT EXISTS)."""
@@ -95,6 +133,9 @@ async def init_db() -> None:
         await db.executescript(CREATE_CONVERSATIONS)
         await db.executescript(CREATE_MESSAGES)
         await db.executescript(CREATE_EMBEDDINGS)
+        await db.executescript(CREATE_USERS)
+        await db.executescript(CREATE_WORKSPACES)
+        await db.executescript(CREATE_WORKSPACE_DOCUMENTS)
         await db.commit()
     log.info("Database ready")
 
