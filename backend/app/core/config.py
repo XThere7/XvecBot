@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     # ── Storage ──────────────────────────────────────────────────────────────
     upload_dir: str = "./data/uploads"
+    UPLOAD_DIR: str = "./uploads"      # Phase 2 workspace uploads root
     processed_dir: str = "./data/processed"
 
     # ── Embedding ────────────────────────────────────────────────────────────
@@ -102,6 +103,12 @@ class Settings(BaseSettings):
     @property
     def upload_path(self) -> Path:
         p = self._resolve_path(self.upload_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def workspace_upload_path(self) -> Path:
+        p = self._resolve_path(self.UPLOAD_DIR)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
