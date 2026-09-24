@@ -1,18 +1,28 @@
 """
 api/documents.py
-Workspace-scoped document upload/list/delete.
-Training (ingestion + embedding) is NOT here — it comes in the next task.
+Workspace-scoped document upload/list/delete plus training endpoints.
+Training pipeline itself lives in services/workspace_training_service.py.
 """
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+    status,
+)
+from fastapi.responses import JSONResponse
 
 from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
+from ..services.workspace_training_service import train_workspace_document
 from ..storage import vector_store
 from .deps import get_current_user
 from .workspaces import _get_owned_workspace
@@ -173,3 +183,99 @@ async def delete_document(
         workspace_id=workspace_id,
         filename=row["filename"],
     )
+
+
+@router.post(
+    "/{workspace_id}/documents/{doc_id}/train",
+    summary="Start training a workspace document",
+)
+async def train_document(
+    workspace_id: str,
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    async with get_db() as db:
+        workspace = await _get_owned_workspace(db, workspace_id, user["id"])
+        if workspace is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found",
+            )
+
+        async with db.execute(
+            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ?",
+            (doc_id, workspace_id),
+        ) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found",
+            )
+
+        current_status = row["status"]
+        if current_status == "processing":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Already processing. Wait for it to finish.",
+            )
+        if current_status == "ready":
+            return {
+                "status": "ready",
+                "message": "Already trained. Delete and re-upload to retrain.",
+            }
+
+        # Claim the document before scheduling so a concurrent request hits 409.
+        await db.execute(
+            "UPDATE workspace_documents SET status = 'processing' WHERE id = ?",
+            (doc_id,),
+        )
+        await db.commit()
+
+    background_tasks.add_task(train_workspace_document, doc_id)
+
+    log.info("Training scheduled", doc_id=doc_id, workspace_id=workspace_id)
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "status": "processing",
+            "message": "Training started. Use /status to poll.",
+        },
+    )
+
+
+@router.get(
+    "/{workspace_id}/documents/{doc_id}/status",
+    summary="Get training status for a workspace document",
+)
+async def document_status(
+    workspace_id: str,
+    doc_id: str,
+    user: dict = Depends(get_current_user),
+):
+    async with get_db() as db:
+        workspace = await _get_owned_workspace(db, workspace_id, user["id"])
+        if workspace is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found",
+            )
+
+        async with db.execute(
+            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ?",
+            (doc_id, workspace_id),
+        ) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found",
+            )
+
+    return {
+        "doc_id": row["id"],
+        "filename": row["filename"],
+        "status": row["status"],
+        "chunk_count": row["chunk_count"],
+    }
