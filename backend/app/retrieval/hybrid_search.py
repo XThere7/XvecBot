@@ -48,16 +48,19 @@ async def hybrid_search(
     query_vector: list[float],
     top_k: int = None,
     document_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> list[HybridResult]:
     """
     Fuse BM25 and vector search results using Reciprocal Rank Fusion.
 
     Args:
-        db:           Active DB connection.
-        query:        Raw user question (for BM25).
-        query_vector: Embedded query (for vector search).
-        top_k:        Final number of chunks to return after fusion.
-        document_id:  Scope retrieval to a single document.
+        db:            Active DB connection.
+        query:         Raw user question (for BM25).
+        query_vector:  Embedded query (for vector search).
+        top_k:         Final number of chunks to return after fusion.
+        document_id:   Scope retrieval to a single document.
+        workspace_id:  Scope retrieval to a single workspace (multi-tenant).
+                       None keeps the original single-tenant behaviour.
 
     Returns:
         List of HybridResult sorted by RRF score descending.
@@ -65,16 +68,24 @@ async def hybrid_search(
     if top_k is None:
         top_k = settings.retrieval_top_k
 
-    # Fetch corpus for BM25 (in-memory build)
-    all_chunks: list[Chunk] = await db_ops.get_all_chunks(db, document_id=document_id)
+    # Fetch corpus for BM25 (in-memory build), scoped to workspace/document
+    all_chunks: list[Chunk] = await db_ops.get_all_chunks(
+        db, document_id=document_id, workspace_id=workspace_id
+    )
     if not all_chunks:
-        log.warning("No chunks found for hybrid search", document_id=document_id)
+        log.warning(
+            "No chunks found for hybrid search",
+            document_id=document_id,
+            workspace_id=workspace_id,
+        )
         return []
 
     # Run both searches in parallel conceptually (sequential here — fast enough)
-    bm25_results: list[BM25Result] = bm25_search(query, all_chunks, top_k=top_k)
+    bm25_results: list[BM25Result] = bm25_search(
+        query, all_chunks, top_k=top_k, workspace_id=workspace_id
+    )
     vector_results: list[VectorResult] = await vector_search(
-        db, query_vector, top_k=top_k, document_id=document_id
+        db, query_vector, top_k=top_k, document_id=document_id, workspace_id=workspace_id
     )
 
     # Build rank maps: chunk_id -> rank

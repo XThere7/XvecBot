@@ -25,6 +25,7 @@ class RAGState(TypedDict):
     query: str
     conversation_id: str
     document_id: Optional[str]
+    workspace_id: Optional[str]      # multi-tenant scope; None = single-tenant
 
     # Retrieval stage
     query_vector: Optional[list[float]]

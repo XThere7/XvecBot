@@ -1,10 +1,11 @@
 """
 retrieval/bm25.py
-BM25 keyword search over all indexed chunks.
+BM25 keyword search over indexed chunks.
 The BM25 index is built in-memory at query time from the chunk corpus.
 For large corpora this can be cached; for portfolio scale it is fast enough.
 """
 from dataclasses import dataclass
+from typing import Optional
 
 from rank_bm25 import BM25Okapi
 
@@ -31,14 +32,20 @@ def bm25_search(
     query: str,
     chunks: list[Chunk],
     top_k: int = None,
+    workspace_id: Optional[str] = None,
 ) -> list[BM25Result]:
     """
     Run BM25 over the provided chunk corpus.
 
     Args:
-        query:   User's natural-language question.
-        chunks:  Full corpus of chunks to search over.
-        top_k:   Maximum results to return.
+        query:         User's natural-language question.
+        chunks:        Full corpus of chunks to search over.
+        top_k:         Maximum results to return.
+        workspace_id:  Optionally restrict hits to chunks in one workspace.
+                       The corpus is expected to be pre-filtered by the caller
+                       (see storage.sqlite.get_all_chunks); this parameter is
+                       kept for callers that filter in-memory.
+                       None keeps the original single-tenant behaviour.
 
     Returns:
         List of BM25Result sorted by score descending (rank 1 = best).

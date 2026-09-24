@@ -18,10 +18,12 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
+from ..services.workspace_query_service import query_workspace
 from ..services.workspace_training_service import train_workspace_document
 from ..storage import vector_store
 from .deps import get_current_user
@@ -279,3 +281,47 @@ async def document_status(
         "status": row["status"],
         "chunk_count": row["chunk_count"],
     }
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    conversation_history: list = Field(default_factory=list)
+
+
+@router.post(
+    "/{workspace_id}/chat",
+    summary="Chat with this workspace's documents",
+)
+async def chat(
+    workspace_id: str,
+    payload: ChatRequest,
+    user: dict = Depends(get_current_user),
+):
+    async with get_db() as db:
+        workspace = await _get_owned_workspace(db, workspace_id, user["id"])
+        if workspace is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found",
+            )
+
+        try:
+            result = await query_workspace(
+                workspace_id=workspace_id,
+                message=payload.message,
+                conversation_history=payload.conversation_history,
+                db=db,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            )
+        except Exception as exc:
+            log.error("Workspace chat error", error=str(exc), workspace_id=workspace_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Chat failed. Check server logs.",
+            )
+
+    return result
