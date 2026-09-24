@@ -153,10 +153,15 @@ async def delete_document(
         except OSError:
             pass
 
-        # 2. remove vector chunks for this document
+        # 2. remove vector embeddings for this document
         await vector_store.delete_embeddings_for_document(db, doc_id)
 
-        # 3. remove the workspace_documents row
+        # 3. remove chunk rows (text content) for this document
+        await db.execute(
+            "DELETE FROM chunks WHERE document_id = ?", (doc_id,)
+        )
+
+        # 4. remove the workspace_documents row
         await db.execute(
             "DELETE FROM workspace_documents WHERE id = ?", (doc_id,)
         )

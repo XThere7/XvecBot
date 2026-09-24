@@ -86,3 +86,38 @@ def load_pdf(file_path: Path) -> PDFDocument:
         title=metadata.get("title"),
         creation_date=metadata.get("creationDate"),
     )
+
+
+def extract_text_from_file(file_path: str, file_type: str) -> str:
+    """
+    Extract plain text from a file by type ('pdf' | 'txt' | 'docx').
+    Returns "" on any failure (logged) so callers can mark the document failed.
+    """
+    try:
+        if file_type == "pdf":
+            pdf_doc = load_pdf(Path(file_path))
+            return "\n".join(page.text for page in pdf_doc.pages)
+
+        if file_type == "txt":
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+
+        if file_type == "docx":
+            from docx import Document
+            document = Document(file_path)
+            return "\n".join(p.text for p in document.paragraphs)
+
+        log.warning(
+            "Unsupported file type for extraction",
+            file_path=file_path,
+            file_type=file_type,
+        )
+        return ""
+    except Exception as exc:
+        log.warning(
+            "Text extraction failed",
+            file_path=file_path,
+            file_type=file_type,
+            error=str(exc),
+        )
+        return ""
