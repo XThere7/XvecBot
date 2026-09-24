@@ -40,6 +40,7 @@ async def retrieve_node(state: RAGState, db: aiosqlite.Connection) -> dict:
         query_vector=query_vector,
         top_k=settings.retrieval_top_k,
         document_id=state.get("document_id"),
+        workspace_id=state.get("workspace_id"),
     )
 
     chunk_ids = [r.chunk_id for r in hybrid_results]

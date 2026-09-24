@@ -86,6 +86,7 @@ async def run_rag_pipeline(
     db: aiosqlite.Connection,
     llm_generator: LLMGenerator,
     document_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> RAGState:
     """
     Convenience wrapper: build the graph, run it, return the final state.
@@ -97,6 +98,7 @@ async def run_rag_pipeline(
         "query": query,
         "conversation_id": conversation_id,
         "document_id": document_id,
+        "workspace_id": workspace_id,
         "query_vector": None,
         "retrieved_chunk_ids": [],
         "retrieved_chunks": [],

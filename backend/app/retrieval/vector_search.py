@@ -28,6 +28,7 @@ async def vector_search(
     query_vector: list[float],
     top_k: int = None,
     document_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> list[VectorResult]:
     """
     Perform cosine similarity search over chunk embeddings.
@@ -37,10 +38,12 @@ async def vector_search(
     higher score = more relevant, consistent with BM25.
 
     Args:
-        db:           Active database connection.
-        query_vector: Embedded query from the embedder.
-        top_k:        Number of results to return.
-        document_id:  Optionally scope search to one document.
+        db:            Active database connection.
+        query_vector:  Embedded query from the embedder.
+        top_k:         Number of results to return.
+        document_id:   Optionally scope search to one document.
+        workspace_id:  Optionally scope search to one workspace (multi-tenant).
+                       None keeps the original single-tenant behaviour.
 
     Returns:
         List of VectorResult sorted by score descending.
@@ -53,6 +56,7 @@ async def vector_search(
         query_vector=query_vector,
         top_k=top_k,
         document_id=document_id,
+        workspace_id=workspace_id,
     )
 
     results = []

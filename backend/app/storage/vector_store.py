@@ -37,6 +37,7 @@ async def search_similar(
     query_vector: list[float],
     top_k: int = 20,
     document_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> list[tuple[str, float]]:
     """
     KNN similarity search over chunk_embeddings.
@@ -44,11 +45,14 @@ async def search_similar(
     (lower = more similar for L2; we convert to a score 1/(1+d)).
 
     If document_id is provided, only chunks from that document are searched.
-    sqlite-vec does not natively support WHERE on joined tables in vec0 queries,
-    so we fetch top_k * 3 and filter in Python.
+    If workspace_id is provided, only chunks belonging to that workspace are
+    searched (chunks.workspace_id). These may be combined.
+    sqlite-vec does not natively support filtering on a joined/other table in
+    vec0 KNN queries, so we over-fetch candidates and filter in Python.
     """
     vec_bytes = _serialize_vector(query_vector)
-    fetch_k = top_k * 3 if document_id else top_k
+    filtering = bool(document_id) or bool(workspace_id)
+    fetch_k = top_k * 3 if filtering else top_k
 
     query = """
         SELECT ce.chunk_id, ce.distance
@@ -61,17 +65,29 @@ async def search_similar(
         rows = await cur.fetchall()
 
     results = []
-    if document_id:
-        # Filter by document via a join lookup
-        for chunk_id, dist in rows:
+    if filtering:
+        # Filter by document / workspace via a join lookup on chunks
+        for r in rows:
+            chunk_id = r["chunk_id"]
+            dist = r["distance"]
             async with db.execute(
-                "SELECT document_id FROM chunks WHERE id = ?", (chunk_id,)
+                """SELECT c.document_id, c.workspace_id,
+                          (SELECT status FROM workspace_documents WHERE id = c.doc_id) AS doc_status
+                   FROM chunks c WHERE c.id = ?""",
+                (chunk_id,),
             ) as c:
                 chunk_row = await c.fetchone()
-            if chunk_row and chunk_row["document_id"] == document_id:
-                results.append((chunk_id, dist))
-                if len(results) >= top_k:
-                    break
+            if chunk_row is None:
+                continue
+            if document_id and chunk_row["document_id"] != document_id:
+                continue
+            if workspace_id and chunk_row["workspace_id"] != workspace_id:
+                continue
+            if workspace_id and chunk_row["doc_status"] != "ready":
+                continue
+            results.append((chunk_id, dist))
+            if len(results) >= top_k:
+                break
     else:
         results = [(r["chunk_id"], r["distance"]) for r in rows]
 

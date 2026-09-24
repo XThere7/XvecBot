@@ -146,12 +146,25 @@ async def get_chunks_by_ids(
 
 
 async def get_all_chunks(
-    db: aiosqlite.Connection, document_id: Optional[str] = None
+    db: aiosqlite.Connection,
+    document_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> list[Chunk]:
     if document_id:
         async with db.execute(
             "SELECT * FROM chunks WHERE document_id = ? ORDER BY page, chunk_index",
             (document_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    elif workspace_id:
+        # Multi-tenant scope: only chunks tagged for this workspace whose
+        # source document is fully trained (status='ready').
+        async with db.execute(
+            """SELECT c.* FROM chunks c
+               JOIN workspace_documents wd ON wd.id = c.doc_id
+               WHERE wd.workspace_id = ? AND wd.status = 'ready'
+               ORDER BY c.document_id, c.page, c.chunk_index""",
+            (workspace_id,),
         ) as cur:
             rows = await cur.fetchall()
     else:

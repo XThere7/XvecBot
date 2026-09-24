@@ -20,6 +20,7 @@ log = get_logger(__name__)
 async def process_query(
     db: aiosqlite.Connection,
     request: QueryRequest,
+    workspace_id: Optional[str] = None,
 ) -> QueryResponse:
     """
     Entry point for the query flow.
@@ -66,6 +67,7 @@ async def process_query(
         db=db,
         llm_generator=llm,
         document_id=request.document_id,
+        workspace_id=workspace_id,
     )
 
     # Persist assistant message
