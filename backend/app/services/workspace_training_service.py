@@ -11,6 +11,7 @@ from typing import Optional
 
 import aiosqlite
 
+from ..core.database import get_db
 from ..core.logging import get_logger
 from ..ingestion.chunker import chunk_document
 from ..ingestion.embedder import embed_texts
@@ -81,13 +82,24 @@ async def _clear_previous_index(db: aiosqlite.Connection, doc_id: str) -> None:
     await db.commit()
 
 
-async def train_workspace_document(doc_id: str, db: aiosqlite.Connection) -> None:
+async def train_workspace_document(
+    doc_id: str,
+    db: Optional[aiosqlite.Connection] = None,
+) -> None:
     """
     Full training pipeline for one workspace document.
 
     Status flow: uploaded -> processing -> ready | failed.
     Never raises — on any error the document is marked 'failed' and logged.
+
+    db: pass an active connection, or omit it (e.g. from a background task,
+    where the request's connection is already closed) and one is opened here.
     """
+    if db is None:
+        async with get_db() as connection:
+            await train_workspace_document(doc_id, connection)
+        return
+
     async with db.execute(
         "SELECT * FROM workspace_documents WHERE id = ?", (doc_id,)
     ) as cur:
