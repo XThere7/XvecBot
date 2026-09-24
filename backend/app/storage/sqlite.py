@@ -105,13 +105,23 @@ async def insert_chunk(
     page: int,
     chunk_index: int,
     text: str,
+    workspace_id: Optional[str] = None,
+    doc_id: Optional[str] = None,
 ) -> str:
     chunk_id = str(uuid.uuid4())
-    await db.execute(
-        """INSERT INTO chunks (id, document_id, page, chunk_index, text)
-           VALUES (?, ?, ?, ?, ?)""",
-        (chunk_id, document_id, page, chunk_index, text),
-    )
+    if workspace_id is not None or doc_id is not None:
+        # Multi-tenant metadata (requires chunks.workspace_id / chunks.doc_id columns)
+        await db.execute(
+            """INSERT INTO chunks (id, document_id, page, chunk_index, text, workspace_id, doc_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (chunk_id, document_id, page, chunk_index, text, workspace_id, doc_id),
+        )
+    else:
+        await db.execute(
+            """INSERT INTO chunks (id, document_id, page, chunk_index, text)
+               VALUES (?, ?, ?, ?, ?)""",
+            (chunk_id, document_id, page, chunk_index, text),
+        )
     return chunk_id
 
 
