@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # first use (per-request), never on import.
     openrouter_api_key: str = ""
     openrouter_model: str = "inclusionai/ling-3.0-flash-fin:free"
+    # Used automatically when the primary model fails for a retryable reason
+    # (rate limit, model unavailable, upstream 5xx, network error).
+    # Set to "" to disable fallback. Env var: LLM_FALLBACK_MODEL
+    llm_fallback_model: str = "openrouter/free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     llm_max_tokens: int = 1024
     llm_temperature: float = 0.1
