@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     )
 
     # ── Application ──────────────────────────────────────────────────────────
-    app_name: str = "production-rag"
+    app_name: str = "XvecBot"
     app_version: str = "1.0.0"
     debug: bool = False
 

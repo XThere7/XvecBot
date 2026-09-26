@@ -47,14 +47,62 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 Get a key: <https://openrouter.ai/keys>
 Restart the server after editing `.env`.
 
+Optional but recommended — automatic model fallback:
+
+```
+LLM_FALLBACK_MODEL=openrouter/free
+```
+
+If the primary model fails for a retryable reason (rate limit 429, model
+unavailable 404, upstream 5xx, network error) the request is retried once on
+this model. Auth/quota errors (401 bad key, 402 no credits) are **not** retried —
+they need fixing, not a different model. Set the value empty to disable fallback.
+
+> **Note on the Phase 1 `X-API-Key`**
+> The legacy endpoints (`/api/v1/query/*`, `/api/v1/documents/*`) use the
+> `API_KEY` setting, **not** the JWT token. Its default is `dev-key`, but if your
+> `.env` sets `API_KEY` to something else, the default no longer works. Always
+> read the real value from `.env`:
+>
+> ```bash
+> KEY=$(grep "^API_KEY=" .env | cut -d= -f2- | tr -d '"'"'"' \r')
+> ```
+>
+> Phase 2 endpoints (`/workspaces/*`, `/auth/*`) do **not** use this key — they
+> use `Authorization: Bearer <jwt>`.
+
 **Check if the LLM is working:**
 
 ```bash
-curl -s http://localhost:8000/api/v1/query/llm/status -H "X-API-Key: dev-key"
+KEY=$(grep "^API_KEY=" .env | cut -d= -f2- | tr -d '"'"'"' \r')
+curl -s http://localhost:8000/api/v1/query/llm/status -H "X-API-Key: $KEY"
 ```
 
-Expected: `{"provider":"openrouter","ok":true,...}`
+Expected: `{"provider":"openrouter","ok":true,"model":"inclusionai/ling-3.0-flash-fin:free",...}`
 If `"ok":false`, the error field tells you exactly what is missing.
+
+**Verify the model actually answers (real API call, ~2 s):**
+
+```bash
+cd backend
+../.venv/bin/python -c "
+import asyncio
+from app.llm.generator import build_generator
+from app.core.config import settings
+async def m():
+    llm = build_generator()
+    print('primary :', llm.model)
+    print('fallback:', settings.llm_fallback_model)
+    print(await llm.generate(
+        query='What is the capital of France? One short sentence.',
+        context='Paris is the capital and most populous city of France.'))
+asyncio.run(m())"
+```
+
+Expected output includes: `primary : inclusionai/ling-3.0-flash-fin:free`,
+`fallback: openrouter/free`, and `Paris is the capital of France.`
+If you instead see `Primary model failed, using fallback model` in the log, the
+primary model is degraded and the fallback carried the request.
 
 ---
 
@@ -466,6 +514,8 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST $B/workspaces/$WS/documents/$DO
 ## 6. Chat with a Workspace
 
 > Requires `OPENROUTER_API_KEY` in `.env` (§0.3). Without it → **500**.
+> Verify the model answers first with the direct call in §0.3, so a chat failure
+> is unambiguously a retrieval problem rather than a missing key.
 
 ### 6.1 Basic question
 
@@ -700,10 +750,35 @@ python3.13 -m venv .venv
 ### 9.3 Chat returns 500
 Almost always a missing LLM key:
 ```bash
-curl -s $B/api/v1/query/llm/status -H "X-API-Key: dev-key"
+KEY=$(grep "^API_KEY=" .env | cut -d= -f2- | tr -d '"'"'"' \r')
+curl -s $B/api/v1/query/llm/status -H "X-API-Key: $KEY"
 ```
 Set `OPENROUTER_API_KEY` in `.env` and restart. The server log shows the exact reason
 (no key / no credits / rate limited / unknown model).
+
+### 9.3a `401 {"detail":"Invalid or missing API key."}` on Phase 1 endpoints
+You sent the literal `dev-key` but your `.env` sets a custom `API_KEY`. Read the
+real value instead of hardcoding it:
+```bash
+KEY=$(grep "^API_KEY=" .env | cut -d= -f2- | tr -d '"'"'"' \r')
+curl -s $B/api/v1/query/llm/status -H "X-API-Key: $KEY"
+```
+Phase 2 endpoints do not use this key at all — they need `Authorization: Bearer <jwt>`.
+Getting `401` on `/workspaces/...` instead means the **JWT** is missing, expired
+(7 days), or was signed with a different `SECRET_KEY` — log in again.
+
+### 9.3b Answers come from a different model than expected
+The log shows:
+```
+Primary model failed, using fallback model
+```
+That is the model fallback working (§0.3). It triggers on rate limits, an
+unavailable primary model, upstream 5xx, or network errors. To see which model
+actually served a request, check the `OpenRouter response received` log line —
+it records `model=...`.
+
+To disable fallback, set `LLM_FALLBACK_MODEL=` (empty) in `.env` and restart.
+Auth/quota errors (401, 402) never trigger fallback by design — they must be fixed.
 
 ### 9.4 Training stuck at `processing`
 Usually the server was restarted mid-training, or a document is huge.
@@ -790,9 +865,10 @@ Phase 1 must still work. Run after any Phase 2 change.
 
 ```bash
 # Phase 1 — unchanged
+KEY=$(grep "^API_KEY=" .env | cut -d= -f2- | tr -d '"'"'"' \r')
 curl -s $B/health
-curl -s $B/api/v1/documents/ -H "X-API-Key: dev-key"
-curl -s $B/api/v1/query/llm/status -H "X-API-Key: dev-key"
+curl -s $B/api/v1/documents/ -H "X-API-Key: $KEY"
+curl -s $B/api/v1/query/llm/status -H "X-API-Key: $KEY"
 ```
 
 Expected: health `ok`, documents list (may contain internal rows, see §9.11), LLM status.
@@ -889,6 +965,7 @@ uploaded ──train──► processing ──► ready
 | `ACCESS_TOKEN_EXPIRE_DAYS` | `7` | Token lifetime |
 | `UPLOAD_DIR` | `./uploads` | Phase 2 upload root |
 | `upload_dir` | `./data/uploads` | Legacy Phase 1 uploads (duplication, cleanup pending) |
+| `LLM_FALLBACK_MODEL` | `openrouter/free` | Model used when the primary fails retryably; empty disables |
 
 ### Data model
 
