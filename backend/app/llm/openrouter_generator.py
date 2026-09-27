@@ -13,6 +13,13 @@ Extra recommended headers:
 Same LLMGenerator interface as before: generate(query, context) and
 stream(query, context). The prompt keeps the existing RAG structure
 (system rules + --- DOCUMENT CONTEXT --- + [Page N] chunks + question).
+
+Model fallback: when the primary model fails for a retryable reason
+(HTTP 404/408/425/429/5xx or a transport error) the request is retried once
+against settings.llm_fallback_model (env LLM_FALLBACK_MODEL). Account-level
+errors (401 bad key, 402 no credits) are surfaced immediately, since a
+different model cannot fix them. Streaming only falls back if no token has
+been emitted yet, to avoid duplicating text mid-answer.
 """
 import json
 from typing import Any, AsyncIterator, Optional
@@ -65,6 +72,30 @@ def _friendly_http_error(status: int, body: str, model: str) -> RuntimeError:
     return RuntimeError(f"OpenRouter returned HTTP {status}: {snippet}")
 
 
+# HTTP statuses worth retrying on a different model: transient upstream or
+# model-specific problems. 401 (bad key) and 402 (no credits) are account-level
+# — a different model will not help, so they are excluded on purpose.
+FALLBACK_HTTP_STATUS = frozenset({404, 408, 425, 429, 500, 502, 503, 504})
+
+
+class ModelCallError(RuntimeError):
+    """Wraps a failed completion attempt, tagged for fallback decisions."""
+
+    def __init__(self, message: str, status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
+
+
+def _should_try_fallback(exc: BaseException) -> bool:
+    """True when swapping to the fallback model could plausibly succeed."""
+    if not settings.llm_fallback_model:
+        return False
+    if isinstance(exc, ModelCallError):
+        # status None -> network/transport error, also worth one retry
+        return exc.status is None or exc.status in FALLBACK_HTTP_STATUS
+    return False
+
+
 class OpenRouterGenerator(LLMGenerator):
     """Chat-completions generator backed by OpenRouter (httpx, no extra deps)."""
 
@@ -108,9 +139,11 @@ class OpenRouterGenerator(LLMGenerator):
             {"role": "user", "content": user_content},
         ]
 
-    def _payload(self, query: str, context: str, stream: bool) -> dict:
+    def _payload(
+        self, query: str, context: str, stream: bool, model: Optional[str] = None
+    ) -> dict:
         return {
-            "model": self.model,
+            "model": model or self.model,
             "messages": self._messages(query, context),
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
@@ -145,47 +178,110 @@ class OpenRouterGenerator(LLMGenerator):
         return result
 
     async def generate(self, query: str, context: str) -> str:
-        log.info("Calling OpenRouter", model=self.model)
+        """
+        Generate an answer, falling back to settings.llm_fallback_model when
+        the primary model fails for a retryable reason.
+        """
+        try:
+            return await self._complete(self.model, query, context)
+        except ModelCallError as exc:
+            if not _should_try_fallback(exc) or self.model == settings.llm_fallback_model:
+                raise RuntimeError(str(exc)) from exc
+            log.warning(
+                "Primary model failed, using fallback model",
+                primary_model=self.model,
+                fallback_model=settings.llm_fallback_model,
+                status=exc.status,
+                error=str(exc),
+            )
+            return await self._complete(settings.llm_fallback_model, query, context)
+
+    async def _complete(self, model: str, query: str, context: str) -> str:
+        """One completion attempt against a specific model."""
+        log.info("Calling OpenRouter", model=model)
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/chat/completions",
                     headers=self._headers(),
-                    json=self._payload(query, context, stream=False),
+                    json=self._payload(query, context, stream=False, model=model),
                 )
                 if resp.status_code != 200:
-                    raise _friendly_http_error(resp.status_code, resp.text, self.model)
+                    raise ModelCallError(
+                        str(_friendly_http_error(resp.status_code, resp.text, model)),
+                        status=resp.status_code,
+                    )
                 data = resp.json()
-        except RuntimeError:
+        except ModelCallError:
             raise
         except Exception as exc:
-            raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
+            raise ModelCallError(f"OpenRouter request failed: {exc}") from exc
         try:
             answer = data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, AttributeError) as exc:
-            raise RuntimeError(
+            raise ModelCallError(
                 f"OpenRouter returned an unexpected response shape: {str(data)[:300]}"
             ) from exc
         if not answer:
-            raise RuntimeError("OpenRouter returned an empty response.")
-        log.info("OpenRouter response received", tokens=len(answer.split()))
+            raise ModelCallError("OpenRouter returned an empty response.")
+        log.info("OpenRouter response received", model=model, tokens=len(answer.split()))
         return answer
 
     async def stream(self, query: str, context: str) -> AsyncIterator[str]:
+        """
+        Stream tokens, falling back to settings.llm_fallback_model when the
+        primary model fails before emitting anything. If tokens already went
+        out, the error is raised instead — replaying from another model would
+        duplicate text mid-answer.
+        """
+        emitted = False
+        try:
+            async for token in self._stream_model(self.model, query, context):
+                emitted = True
+                yield token
+        except ModelCallError as exc:
+            if (
+                emitted
+                or not _should_try_fallback(exc)
+                or self.model == settings.llm_fallback_model
+            ):
+                raise RuntimeError(str(exc)) from exc
+            log.warning(
+                "Primary model failed mid-stream, using fallback model",
+                primary_model=self.model,
+                fallback_model=settings.llm_fallback_model,
+                status=exc.status,
+                error=str(exc),
+            )
+            async for token in self._stream_model(
+                settings.llm_fallback_model, query, context
+            ):
+                yield token
+
+    async def _stream_model(
+        self, model: str, query: str, context: str
+    ) -> AsyncIterator[str]:
+        """One streaming attempt against a specific model."""
+        log.info("Calling OpenRouter (stream)", model=model)
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 async with client.stream(
                     "POST",
                     f"{self.base_url}/chat/completions",
                     headers=self._headers(),
-                    json=self._payload(query, context, stream=True),
+                    json=self._payload(query, context, stream=True, model=model),
                 ) as resp:
                     if resp.status_code != 200:
                         body = await resp.aread()
-                        raise _friendly_http_error(
-                            resp.status_code,
-                            body.decode("utf-8", errors="replace"),
-                            self.model,
+                        raise ModelCallError(
+                            str(
+                                _friendly_http_error(
+                                    resp.status_code,
+                                    body.decode("utf-8", errors="replace"),
+                                    model,
+                                )
+                            ),
+                            status=resp.status_code,
                         )
                     async for line in resp.aiter_lines():
                         line = line.strip()
@@ -201,14 +297,14 @@ class OpenRouterGenerator(LLMGenerator):
                         except json.JSONDecodeError:
                             continue
                         if chunk.get("error"):
-                            raise RuntimeError(f"OpenRouter error: {chunk['error']}")
+                            raise ModelCallError(f"OpenRouter error: {chunk['error']}")
                         try:
                             delta = chunk["choices"][0]["delta"].get("content", "")
                         except (KeyError, IndexError):
                             continue
                         if delta:
                             yield delta
-        except RuntimeError:
+        except ModelCallError:
             raise
         except Exception as exc:
-            raise RuntimeError(f"OpenRouter stream failed: {exc}") from exc
+            raise ModelCallError(f"OpenRouter stream failed: {exc}") from exc

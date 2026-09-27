@@ -14,9 +14,21 @@ class QueryRequest(BaseModel):
 
 
 class Citation(BaseModel):
-    page: int
+    """
+    A source backing an answer. Stored as a JSON array in messages.citations.
+
+    Shared by Phase 1 (document Q&A) and Phase 3 (agents), so every field is
+    optional except the chunk identity:
+
+      - Phase 1 emits page, chunk_id, text_preview.
+      - Phase 3 (agents) adds filename and chunk_index, and may omit page for
+        non-paginated sources (.txt / .docx).
+    """
     chunk_id: str
-    text_preview: str    # first 200 chars of the cited chunk
+    page: Optional[int] = None
+    text_preview: str = ""
+    filename: Optional[str] = None
+    chunk_index: Optional[int] = None
 
 
 class QueryResponse(BaseModel):

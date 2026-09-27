@@ -117,6 +117,89 @@ CREATE TABLE IF NOT EXISTS workspace_documents (
 CREATE INDEX IF NOT EXISTS idx_workspace_docs_ws ON workspace_documents(workspace_id);
 """
 
+# Phase 3 — Agent Builder (schemas also documented in models/agent.py)
+CREATE_AGENTS = """
+CREATE TABLE IF NOT EXISTS agents (
+    id            TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    system_prompt TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    temperature   REAL NOT NULL DEFAULT 0.7,
+    language      TEXT NOT NULL DEFAULT 'English',
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(workspace_id, is_active);
+"""
+
+# `conversations` already exists from Phase 1 with a narrower schema, so
+# CREATE TABLE IF NOT EXISTS against it is a silent no-op. The agent columns
+# are appended instead — additive and data-preserving.
+# `messages` gains no column: it reuses the existing `citations` JSON array.
+# An agent conversation is any conversations row with a non-NULL agent_id.
+AGENT_CONVERSATION_COLUMNS = {
+    "agent_id": "TEXT REFERENCES agents(id) ON DELETE CASCADE",
+    "title": "TEXT",
+    "updated_at": "TEXT NOT NULL DEFAULT ''",
+}
+
+# An earlier revision of this change added a duplicate `messages.sources`
+# column. It is dropped so a single source field (citations) is maintained.
+# Safe: the column was never written to.
+DEPRECATED_COLUMNS = {
+    "messages": ("sources",),
+}
+
+
+async def _add_columns_if_missing(
+    db: aiosqlite.Connection,
+    table: str,
+    columns: dict,
+) -> None:
+    """
+    Append any missing columns to an existing table.
+
+    SQLite has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so the existing
+    columns are read from PRAGMA table_info first and only absent ones are
+    added. Existing rows keep their data (SQLite backfills the default).
+    """
+    async with db.execute(f"PRAGMA table_info({table})") as cur:
+        existing = {row[1] for row in await cur.fetchall()}
+
+    added = []
+    for column, definition in columns.items():
+        if column not in existing:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            added.append(column)
+
+    if added:
+        await db.commit()
+        log.info("Schema extended", table=table, columns=sorted(added))
+
+
+async def _drop_deprecated_columns(
+    db: aiosqlite.Connection,
+    table: str,
+    columns: tuple,
+) -> None:
+    """Remove columns superseded by a later revision (no-op when absent)."""
+    async with db.execute(f"PRAGMA table_info({table})") as cur:
+        existing = {row[1] for row in await cur.fetchall()}
+
+    dropped = []
+    for column in columns:
+        if column in existing:
+            await db.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+            dropped.append(column)
+
+    if dropped:
+        await db.commit()
+        log.info("Deprecated columns removed", table=table, columns=sorted(dropped))
+
 
 async def init_db() -> None:
     """Create all tables. Safe to call on every startup (IF NOT EXISTS)."""
@@ -136,6 +219,14 @@ async def init_db() -> None:
         await db.executescript(CREATE_USERS)
         await db.executescript(CREATE_WORKSPACES)
         await db.executescript(CREATE_WORKSPACE_DOCUMENTS)
+        await db.executescript(CREATE_AGENTS)
+        # Agent columns on the pre-existing Phase 1 conversations table (idempotent).
+        await _add_columns_if_missing(db, "conversations", AGENT_CONVERSATION_COLUMNS)
+        # messages reuses `citations` — clean up the superseded `sources` column.
+        await _drop_deprecated_columns(db, "messages", DEPRECATED_COLUMNS["messages"])
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_conversations_agent ON conversations(agent_id)"
+        )
         await db.commit()
     log.info("Database ready")
 
