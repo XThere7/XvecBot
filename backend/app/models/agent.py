@@ -50,7 +50,7 @@ class Agent(BaseModel):
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     system_prompt: str = Field(..., min_length=1)
-    model: str = Field(..., min_length=1)
+    model: str = Field(default="meta-llama/llama-3.3-70b-instruct:free", min_length=1)
     description: Optional[str] = None
     temperature: float = Field(default=0.7, ge=0.0, le=1.0)
     language: str = Field(default="English", max_length=50)
