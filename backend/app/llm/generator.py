@@ -39,7 +39,16 @@ class MockGenerator(LLMGenerator):
     async def check_health(self) -> dict:
         return {"provider": "mock", "ok": True}
 
-    async def generate(self, query: str, context: str) -> str:
+    async def generate(
+        self,
+        query: str,
+        context: str,
+        system_prompt: Optional[str] = None,
+        history: Optional[list] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
+        self.last_model_used = model or "mock"
         log.info("MockGenerator: returning stub answer")
         pages = []
         for part in context.split("\n"):

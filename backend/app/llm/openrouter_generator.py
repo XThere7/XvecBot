@@ -110,6 +110,7 @@ class OpenRouterGenerator(LLMGenerator):
     ):
         self.api_key = api_key or settings.openrouter_api_key
         self.model = model or settings.openrouter_model
+        self.last_model_used = self.model
         self.base_url = (base_url or settings.openrouter_base_url).rstrip("/")
         self.max_tokens = max_tokens or settings.llm_max_tokens
         self.temperature = temperature if temperature is not None else settings.llm_temperature
@@ -126,7 +127,13 @@ class OpenRouterGenerator(LLMGenerator):
             "X-Title": _DEFAULT_TITLE,
         }
 
-    def _messages(self, query: str, context: str) -> list:
+    def _messages(
+        self,
+        query: str,
+        context: str,
+        system_prompt: Optional[str] = None,
+        history: Optional[list] = None,
+    ) -> list:
         user_content = (
             "Answer the question using ONLY the context below. "
             'If the answer is not in the context, reply exactly: "I cannot find '
@@ -134,19 +141,30 @@ class OpenRouterGenerator(LLMGenerator):
             f"--- DOCUMENT CONTEXT ---\n{context}\n--- END CONTEXT ---\n\n"
             f"Question: {query}"
         )
-        return [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ]
+        messages = [{"role": "system", "content": system_prompt or SYSTEM_PROMPT}]
+        if history:
+            for turn in history:
+                messages.append({"role": turn["role"], "content": turn["content"]})
+        messages.append({"role": "user", "content": user_content})
+        return messages
 
     def _payload(
-        self, query: str, context: str, stream: bool, model: Optional[str] = None
+        self,
+        query: str,
+        context: str,
+        stream: bool,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[list] = None,
+        temperature: Optional[float] = None,
     ) -> dict:
         return {
             "model": model or self.model,
-            "messages": self._messages(query, context),
+            "messages": self._messages(
+                query, context, system_prompt=system_prompt, history=history
+            ),
             "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
+            "temperature": self.temperature if temperature is None else temperature,
             "stream": stream,
         }
 
@@ -177,34 +195,81 @@ class OpenRouterGenerator(LLMGenerator):
             result["error"] = f"Cannot reach OpenRouter at {self.base_url}: {exc}"
         return result
 
-    async def generate(self, query: str, context: str) -> str:
+    async def generate(
+        self,
+        query: str,
+        context: str,
+        system_prompt: Optional[str] = None,
+        history: Optional[list] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
         """
         Generate an answer, falling back to settings.llm_fallback_model when
         the primary model fails for a retryable reason.
+
+        Optional per-call overrides: system_prompt, history (prior turns),
+        model and temperature. When omitted, the instance defaults are used.
         """
+        primary_model = model or self.model
+        call_temperature = self.temperature if temperature is None else temperature
         try:
-            return await self._complete(self.model, query, context)
+            return await self._complete(
+                primary_model,
+                query,
+                context,
+                system_prompt=system_prompt,
+                history=history,
+                temperature=call_temperature,
+            )
         except ModelCallError as exc:
-            if not _should_try_fallback(exc) or self.model == settings.llm_fallback_model:
+            if (
+                not _should_try_fallback(exc)
+                or primary_model == settings.llm_fallback_model
+            ):
                 raise RuntimeError(str(exc)) from exc
             log.warning(
                 "Primary model failed, using fallback model",
-                primary_model=self.model,
+                primary_model=primary_model,
                 fallback_model=settings.llm_fallback_model,
                 status=exc.status,
                 error=str(exc),
             )
-            return await self._complete(settings.llm_fallback_model, query, context)
+            return await self._complete(
+                settings.llm_fallback_model,
+                query,
+                context,
+                system_prompt=system_prompt,
+                history=history,
+                temperature=call_temperature,
+            )
 
-    async def _complete(self, model: str, query: str, context: str) -> str:
+    async def _complete(
+        self,
+        model: str,
+        query: str,
+        context: str,
+        system_prompt: Optional[str] = None,
+        history: Optional[list] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
         """One completion attempt against a specific model."""
+        self.last_model_used = model
         log.info("Calling OpenRouter", model=model)
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/chat/completions",
                     headers=self._headers(),
-                    json=self._payload(query, context, stream=False, model=model),
+                    json=self._payload(
+                        query,
+                        context,
+                        stream=False,
+                        model=model,
+                        system_prompt=system_prompt,
+                        history=history,
+                        temperature=temperature,
+                    ),
                 )
                 if resp.status_code != 200:
                     raise ModelCallError(
