@@ -4,12 +4,15 @@ Agent CRUD and conversation history — thin routing layer.
 All logic lives in services/agent_service.py and services/conversation_service.py.
 Every route is scoped to the authenticated owner of the workspace.
 """
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
 
 from ..core.database import get_db
 from ..core.logging import get_logger
 from ..models.agent import AgentCreate, AgentUpdate
-from ..services import agent_service, conversation_service
+from ..services import agent_chat_service, agent_service, conversation_service
 from .deps import get_current_user
 
 log = get_logger(__name__)
@@ -177,3 +180,55 @@ async def delete_conversation(
         await _require_owned_agent(db, workspace_id, agent_id, user)
         await conversation_service.delete_conversation(db, conversation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Chat ──────────────────────────────────────────────────────────────────────
+
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    conversation_id: Optional[str] = None
+
+
+@router.post(
+    "/{workspace_id}/agents/{agent_id}/chat",
+    summary="Send a message to an agent",
+)
+async def chat(
+    workspace_id: str,
+    agent_id: str,
+    payload: AgentChatRequest,
+    user: dict = Depends(get_current_user),
+):
+    async with get_db() as db:
+        await _require_owned_agent(db, workspace_id, agent_id, user)
+        try:
+            return await agent_chat_service.chat_with_agent(
+                agent_id=agent_id,
+                conversation_id=payload.conversation_id,
+                message=payload.message,
+                db=db,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.error("Agent chat error", error=str(exc), agent_id=agent_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Chat failed. Check server logs.",
+            )
+
+
+@router.post(
+    "/{workspace_id}/agents/{agent_id}/conversations/new",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new empty conversation for an agent",
+)
+async def new_conversation(
+    workspace_id: str,
+    agent_id: str,
+    user: dict = Depends(get_current_user),
+):
+    async with get_db() as db:
+        await _require_owned_agent(db, workspace_id, agent_id, user)
+        return await conversation_service.create_conversation(db, agent_id)
