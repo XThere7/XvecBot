@@ -50,9 +50,11 @@ class Agent(BaseModel):
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     system_prompt: str = Field(..., min_length=1)
-    model: str = Field(..., min_length=1)
+    model: str = Field(default="meta-llama/llama-3.3-70b-instruct:free", min_length=1)
     description: Optional[str] = None
-    temperature: float = Field(default=0.7, ge=0.0, le=1.0)
+    # No ge/le here: the service clamps via agent_config.validate_temperature
+    # so an out-of-range value is corrected rather than rejected.
+    temperature: float = Field(default=0.7)
     language: str = Field(default="English", max_length=50)
 
 
@@ -61,7 +63,7 @@ class AgentUpdate(BaseModel):
     description: Optional[str] = None
     system_prompt: Optional[str] = Field(default=None, min_length=1)
     model: Optional[str] = Field(default=None, min_length=1)
-    temperature: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    temperature: Optional[float] = Field(default=None)
     language: Optional[str] = Field(default=None, max_length=50)
     is_active: Optional[bool] = None
 

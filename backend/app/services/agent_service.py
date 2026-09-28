@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import aiosqlite
 from fastapi import HTTPException, status
 
+from ..core.agent_config import validate_agent_config
 from ..core.logging import get_logger
 
 log = get_logger(__name__)
@@ -87,6 +88,21 @@ async def create_agent(
     """
     await _require_owned_workspace(db, workspace_id, owner_id)
 
+    # Validate and normalise the configuration before storing it.
+    try:
+        config = validate_agent_config(
+            name=name,
+            system_prompt=system_prompt,
+            model=model,
+            temperature=temperature,
+            language=language,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
     agent_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
@@ -97,12 +113,12 @@ async def create_agent(
         (
             agent_id,
             workspace_id,
-            name,
+            config["name"],
             description,
-            system_prompt,
-            model,
-            temperature,
-            language,
+            config["system_prompt"],
+            config["model"],
+            config["temperature"],
+            config["language"],
             now,
             now,
         ),
@@ -115,7 +131,7 @@ async def create_agent(
         agent_id=agent_id,
         workspace_id=workspace_id,
         owner_id=owner_id,
-        name=name,
+        name=config["name"],
     )
     return agent
 
@@ -172,6 +188,28 @@ async def update_agent(
         for key, value in fields.items()
         if key in _UPDATABLE_COLUMNS and value is not None
     }
+
+    # Validate the resulting configuration (merged with current values) so the
+    # stored agent is always valid. Soft violations fall back to defaults.
+    merged = {
+        "name": updates.get("name", agent["name"]),
+        "system_prompt": updates.get("system_prompt", agent["system_prompt"]),
+        "model": updates.get("model", agent["model"]),
+        "temperature": updates.get("temperature", agent["temperature"]),
+        "language": updates.get("language", agent["language"]),
+    }
+    try:
+        config = validate_agent_config(**merged)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    # Write back soft-validated values (clamped temperature, defaulted
+    # model/language) so the stored row matches what was validated.
+    for key in updates:
+        updates[key] = config[key]
 
     now = datetime.now(timezone.utc).isoformat()
     if updates:
