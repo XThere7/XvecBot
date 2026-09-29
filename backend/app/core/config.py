@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     # Set to "" to disable fallback. Env var: LLM_FALLBACK_MODEL
     llm_fallback_model: str = "openrouter/free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    llm_max_tokens: int = 1024
+    llm_max_tokens: int = 4096
     llm_temperature: float = 0.1
 
     # ── CORS ─────────────────────────────────────────────────────────────────

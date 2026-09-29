@@ -136,6 +136,23 @@ CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(workspace_id, is_active);
 """
 
+# Phase 4 — embeddable widget tokens
+CREATE_AGENT_EMBED_TOKENS = """
+CREATE TABLE IF NOT EXISTS agent_embed_tokens (
+    id            TEXT PRIMARY KEY,
+    agent_id      TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    token         TEXT NOT NULL UNIQUE,
+    label         TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    allowed_origins TEXT,
+    request_count INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    last_used_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_embed_tokens_agent ON agent_embed_tokens(agent_id);
+CREATE INDEX IF NOT EXISTS idx_embed_tokens_token  ON agent_embed_tokens(token);
+"""
+
 # `conversations` already exists from Phase 1 with a narrower schema, so
 # CREATE TABLE IF NOT EXISTS against it is a silent no-op. The agent columns
 # are appended instead — additive and data-preserving.
@@ -220,6 +237,7 @@ async def init_db() -> None:
         await db.executescript(CREATE_WORKSPACES)
         await db.executescript(CREATE_WORKSPACE_DOCUMENTS)
         await db.executescript(CREATE_AGENTS)
+        await db.executescript(CREATE_AGENT_EMBED_TOKENS)
         # Agent columns on the pre-existing Phase 1 conversations table (idempotent).
         await _add_columns_if_missing(db, "conversations", AGENT_CONVERSATION_COLUMNS)
         # messages reuses `citations` — clean up the superseded `sources` column.

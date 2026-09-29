@@ -282,11 +282,18 @@ class OpenRouterGenerator(LLMGenerator):
         except Exception as exc:
             raise ModelCallError(f"OpenRouter request failed: {exc}") from exc
         try:
-            answer = data["choices"][0]["message"]["content"].strip()
+            content = data["choices"][0]["message"].get("content")
         except (KeyError, IndexError, AttributeError) as exc:
             raise ModelCallError(
                 f"OpenRouter returned an unexpected response shape: {str(data)[:300]}"
             ) from exc
+        if content is None:
+            finish = data["choices"][0].get("finish_reason")
+            raise ModelCallError(
+                f"OpenRouter returned no content (finish_reason={finish}). "
+                "The response was likely truncated — increase llm_max_tokens."
+            )
+        answer = content.strip()
         if not answer:
             raise ModelCallError("OpenRouter returned an empty response.")
         log.info("OpenRouter response received", model=model, tokens=len(answer.split()))

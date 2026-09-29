@@ -1,0 +1,92 @@
+"""
+api/public.py
+Public embeddable widget — NO authentication.
+
+Any website can embed an agent using an opaque embed token. This router is
+intentionally minimal: one chat endpoint and one agent-info endpoint. It applies
+an in-process per-token rate limiter and never exposes internal agent config.
+"""
+import time
+from collections import defaultdict
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel, Field
+
+from ..core.database import get_db
+from ..core.logging import get_logger
+from ..models.embed_token import PublicAgentInfo
+from ..services import embed_service
+
+log = get_logger(__name__)
+router = APIRouter(prefix="/public", tags=["Public Widget"])
+
+# ── In-process rate limiter ───────────────────────────────────────────────────
+# token -> list of request timestamps (seconds). Max 20 requests / 60 seconds.
+RATE_LIMIT_MAX = 20
+RATE_LIMIT_WINDOW = 60.0
+
+_rate_limit: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(token: str) -> None:
+    """Allow up to RATE_LIMIT_MAX requests per RATE_LIMIT_WINDOW per token."""
+    now = time.time()
+    timestamps = _rate_limit[token]
+
+    # Drop entries outside the window.
+    cutoff = now - RATE_LIMIT_WINDOW
+    _rate_limit[token] = [t for t in timestamps if t > cutoff]
+
+    if len(_rate_limit[token]) >= RATE_LIMIT_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Please slow down.",
+        )
+
+    _rate_limit[token].append(now)
+
+
+class PublicChatRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=4000)
+    conversation_id: Optional[str] = None
+
+
+@router.post("/chat", summary="Public widget chat (no auth)")
+async def public_chat(
+    payload: PublicChatRequest,
+    request: Request,
+):
+    _check_rate_limit(payload.token)
+
+    origin = request.headers.get("origin")
+
+    async with get_db() as db:
+        result = await embed_service.public_chat(
+            db=db,
+            token=payload.token,
+            message=payload.message,
+            conversation_id=payload.conversation_id,
+            origin=origin,
+        )
+
+    # Strip internal fields — the public surface exposes only these three.
+    return {
+        "answer": result["answer"],
+        "sources": result["sources"],
+        "conversation_id": result["conversation_id"],
+    }
+
+
+@router.get("/agent/{token}", summary="Public agent info for widget UI (no auth)")
+async def public_agent_info(
+    token: str,
+):
+    async with get_db() as db:
+        agent = await embed_service.resolve_token(db, token)
+    return PublicAgentInfo(
+        name=agent["name"],
+        description=agent.get("description"),
+        language=agent["language"],
+    )
