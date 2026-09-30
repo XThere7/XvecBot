@@ -26,6 +26,7 @@ _UPDATABLE_COLUMNS = (
     "temperature",
     "language",
     "is_active",
+    "welcome_message",
 )
 
 
@@ -207,9 +208,11 @@ async def update_agent(
         )
 
     # Write back soft-validated values (clamped temperature, defaulted
-    # model/language) so the stored row matches what was validated.
+    # model/language) so the stored row matches what was validated. Columns that
+    # are not part of the LLM config (e.g. welcome_message) pass through as-is.
     for key in updates:
-        updates[key] = config[key]
+        if key in config:
+            updates[key] = config[key]
 
     now = datetime.now(timezone.utc).isoformat()
     if updates:

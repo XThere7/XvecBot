@@ -13,6 +13,7 @@ import json
 import secrets
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -27,6 +28,8 @@ from .deps import get_current_user
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/workspaces", tags=["Embed Tokens"])
+
+_STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 
 MAX_LABEL_LENGTH = 100
 MASK_PREFIX = 8
@@ -126,12 +129,27 @@ async def _get_owned_token(
     return dict(row)
 
 
+def _widget_js_path() -> str:
+    """
+    Filename the customer snippet should point at.
+
+    Prefers the minified production bundle, but falls back to the readable
+    source when the bundle has not been built (fresh clone, dev machine), so a
+    snippet is never handed a 404 URL. Set WIDGET_MINIFIED=false to always
+    serve the readable source.
+    """
+    bundle = _STATIC_DIR / "widget.min.js"
+    if settings.widget_minified and bundle.is_file():
+        return "widget.min.js"
+    return "widget.js"
+
+
 def _build_snippet(token: str) -> str:
     """Ready-to-paste HTML snippet for embedding the widget."""
     base = settings.app_public_url.rstrip("/")
     return (
         "<!-- XvecBot chat widget -->\n"
-        f'<script src="{base}/widget.js"\n'
+        f'<script src="{base}/{_widget_js_path()}"\n'
         f'        data-agent="{token}"\n'
         f'        data-position="right"\n'
         f'        data-color="#6366f1"\n'

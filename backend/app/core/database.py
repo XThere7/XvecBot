@@ -130,7 +130,8 @@ CREATE TABLE IF NOT EXISTS agents (
     language      TEXT NOT NULL DEFAULT 'English',
     is_active     INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
+    updated_at    TEXT NOT NULL,
+    welcome_message TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(workspace_id, is_active);
@@ -162,6 +163,12 @@ AGENT_CONVERSATION_COLUMNS = {
     "agent_id": "TEXT REFERENCES agents(id) ON DELETE CASCADE",
     "title": "TEXT",
     "updated_at": "TEXT NOT NULL DEFAULT ''",
+}
+
+# `agents` predates the Phase 4 widget, so the same CREATE TABLE IF NOT EXISTS
+# is a no-op there too — the welcome_message column is appended instead.
+AGENT_TABLE_COLUMNS = {
+    "welcome_message": "TEXT",
 }
 
 # An earlier revision of this change added a duplicate `messages.sources`
@@ -240,6 +247,8 @@ async def init_db() -> None:
         await db.executescript(CREATE_AGENT_EMBED_TOKENS)
         # Agent columns on the pre-existing Phase 1 conversations table (idempotent).
         await _add_columns_if_missing(db, "conversations", AGENT_CONVERSATION_COLUMNS)
+        # `agents` gains the Phase 4 widget welcome_message column (idempotent).
+        await _add_columns_if_missing(db, "agents", AGENT_TABLE_COLUMNS)
         # messages reuses `citations` — clean up the superseded `sources` column.
         await _drop_deprecated_columns(db, "messages", DEPRECATED_COLUMNS["messages"])
         await db.execute(

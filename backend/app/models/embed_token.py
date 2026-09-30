@@ -72,3 +72,6 @@ class PublicAgentInfo(BaseModel):
     name: str
     description: Optional[str] = None
     language: str
+    # Always resolved to a non-empty string so the widget never renders a blank
+    # first message when the owner has not configured one.
+    welcome_message: str
