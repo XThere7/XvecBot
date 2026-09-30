@@ -49,3 +49,7 @@ frontend/dist/
 Thumbs.db
 .env
 .env
+
+# Generated widget production build (run: python backend/scripts/build_widget.py)
+backend/app/static/widget.min.js
+data/rag.db

@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
     app_public_url: str = "https://yourplatform.com"
+    # Point customer snippets at the minified bundle built by
+    # scripts/build_widget.py. Set false to hand out the readable source.
+    widget_minified: bool = True
 
     # ── Security ─────────────────────────────────────────────────────────────
     api_key: str = "dev-key"

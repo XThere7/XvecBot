@@ -41,6 +41,7 @@ class Agent(BaseModel):
     temperature: float = 0.7
     language: str = "English"
     is_active: bool = True
+    welcome_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -66,6 +67,8 @@ class AgentUpdate(BaseModel):
     temperature: Optional[float] = Field(default=None)
     language: Optional[str] = Field(default=None, max_length=50)
     is_active: Optional[bool] = None
+    # Shown by the embeddable widget as its first (visual-only) message.
+    welcome_message: Optional[str] = Field(default=None, max_length=500)
 
 
 class AgentRead(BaseModel):
@@ -78,6 +81,7 @@ class AgentRead(BaseModel):
     temperature: float
     language: str
     is_active: bool
+    welcome_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

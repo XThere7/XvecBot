@@ -21,6 +21,10 @@ from ..services import embed_service
 log = get_logger(__name__)
 router = APIRouter(prefix="/public", tags=["Public Widget"])
 
+# Used when the agent owner has not configured a welcome_message. The widget
+# falls back to the same string if an older API omits the field entirely.
+DEFAULT_WELCOME_MESSAGE = "Hi! How can I help you today?"
+
 # ── In-process rate limiter ───────────────────────────────────────────────────
 # token -> list of request timestamps (seconds). Max 20 requests / 60 seconds.
 RATE_LIMIT_MAX = 20
@@ -89,4 +93,7 @@ async def public_agent_info(
         name=agent["name"],
         description=agent.get("description"),
         language=agent["language"],
+        welcome_message=(
+            (agent.get("welcome_message") or "").strip() or DEFAULT_WELCOME_MESSAGE
+        ),
     )
