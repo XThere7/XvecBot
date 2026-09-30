@@ -57,6 +57,46 @@ class PublicChatRequest(BaseModel):
     conversation_id: Optional[str] = None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PUBLIC SURFACE — WHAT IS DELIBERATELY NEVER EXPOSED
+# ─────────────────────────────────────────────────────────────────────────────
+# These routes are unauthenticated by design: any website may hold an embed
+# token, so everything the browser receives is treated as public. The response
+# below is assembled field-by-field from the agent pipeline result rather than
+# serialised wholesale, so a new key added to the pipeline cannot leak by
+# accident. The following are intentionally excluded:
+#
+#   workspace_id, owner_id  - identify the merchant; anyone holding the token
+#                             already has access, but the ids are not needed
+#                             and would aid enumeration.
+#   system_prompt           - the merchant's internal instructions. Exposing
+#                             them invites prompt-extraction attempts and leaks
+#                             business logic.
+#   model, model_used       - the merchant's provider/LLM choice and fallback
+#                             chain. Exposing it is a commercial secret and
+#                             invites model-targeted abuse.
+#   temperature, language   - internal agent configuration.
+#   file_path               - absolute server paths (documents.file_path).
+#                             Reveals the host filesystem layout.
+#   document_id, chunk_id,
+#   agent_id, message ids   - internal DB primary keys. conversation_id is the
+#                             only id returned, because the widget must send it
+#                             back to continue the thread; it is an opaque UUID
+#                             and grants no other access.
+#   request_count, last_used_at, embed token metadata - usage telemetry, the
+#                             merchant's side of the contract, not the visitor's.
+#
+# Deliberately INCLUDED: the generated answer, the citation sources, and
+# conversation_id.
+#   sources[] carries the *display* filename of the cited document
+#   (documents/workspace_documents.filename, e.g. "pricing.pdf") and its
+#   chunk_index. That is a label the merchant chose when uploading, it is
+#   required for the widget to render citation links, and it is NOT the stored
+#   file_path. Audited: _filenames_for_chunks() selects only the filename
+#   column, so no server path can reach the public payload.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @router.post("/chat", summary="Public widget chat (no auth)")
 async def public_chat(
     payload: PublicChatRequest,
@@ -76,6 +116,7 @@ async def public_chat(
         )
 
     # Strip internal fields — the public surface exposes only these three.
+    # See the audit note above for the full list of what is withheld.
     return {
         "answer": result["answer"],
         "sources": result["sources"],

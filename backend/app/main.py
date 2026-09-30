@@ -24,6 +24,7 @@ from .api import agents, auth, documents, embed_tokens, health, public, query, u
 from .core.config import settings
 from .core.database import init_db
 from .core.logging import get_logger, setup_logging
+from .core.middleware import PublicSurfaceMiddleware
 
 # Initialise structured logging first
 setup_logging()
@@ -77,9 +78,15 @@ def create_app() -> FastAPI:
     )
 
     # ── Middleware ────────────────────────────────────────────────────────────
-    # allow_origins: explicit dev origins (localhost + LAN IP).
-    # allow_origin_regex: covers any 192.168.x.x / 10.x.x.x / 172.16.x.x host
-    # so DHCP IP changes don't break CORS again. Tighten both in production.
+    # The dashboard API is intentionally restricted to the configured dev
+    # origins: its JWT endpoints should not be callable from arbitrary sites.
+    # That policy is also too strict for /public/*, which the embedded widget
+    # calls from whatever domain a customer pastes the snippet into — Starlette's
+    # CORSMiddleware answers a disallowed preflight with 400 before any route
+    # runs, so the widget simply would not work on a real customer domain.
+    # PublicSurfaceMiddleware opens CORS for /public/* only and leaves every
+    # other route to this restrictive policy. Per-widget origin allow-listing is
+    # enforced at the application layer in embed_service._check_origin().
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins_list,
@@ -89,6 +96,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    # Registered last => outermost (Starlette inserts at index 0), so this layer
+    # answers /public/* preflights before CORSMiddleware can reject them.
+    app.add_middleware(PublicSurfaceMiddleware)
 
     # ── Routers ───────────────────────────────────────────────────────────────
     app.include_router(health.router)
