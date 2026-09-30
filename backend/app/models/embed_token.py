@@ -8,7 +8,7 @@ and per-token request counting are stored here.
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AgentEmbedToken(BaseModel):
@@ -30,6 +30,41 @@ class AgentEmbedTokenCreate(BaseModel):
     agent_id: str
     label: Optional[str] = None
     allowed_origins: Optional[list[str]] = None
+
+
+class EmbedTokenCreate(BaseModel):
+    label: str = Field(..., min_length=1, max_length=100)
+    allowed_origins: Optional[list[str]] = None
+
+
+class EmbedTokenUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    allowed_origins: Optional[list[str]] = None
+    is_active: Optional[bool] = None
+
+
+class EmbedTokenRead(BaseModel):
+    """Token as returned to the dashboard — token string is masked."""
+    id: str
+    agent_id: str
+    token: str
+    label: Optional[str] = None
+    is_active: bool
+    allowed_origins: Optional[list[str]] = None
+    request_count: int
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class EmbedTokenCreated(EmbedTokenRead):
+    """Returned only at creation — includes the full token string."""
+
+
+class EmbedSnippet(BaseModel):
+    snippet: str
+    token: str
 
 
 class PublicAgentInfo(BaseModel):

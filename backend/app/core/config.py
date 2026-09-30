@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     app_name: str = "XvecBot"
     app_version: str = "1.0.0"
     debug: bool = False
+    app_public_url: str = "https://yourplatform.com"
 
     # ── Security ─────────────────────────────────────────────────────────────
     api_key: str = "dev-key"
