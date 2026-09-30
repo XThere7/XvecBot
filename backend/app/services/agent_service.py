@@ -80,6 +80,7 @@ async def create_agent(
     model: str,
     temperature: float,
     language: str,
+    welcome_message: str | None = None,
 ) -> dict:
     """
     Create an agent inside a workspace.
@@ -109,8 +110,9 @@ async def create_agent(
     await db.execute(
         """INSERT INTO agents
            (id, workspace_id, name, description, system_prompt, model,
-            temperature, language, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            temperature, language, is_active, created_at, updated_at,
+            welcome_message)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
         (
             agent_id,
             workspace_id,
@@ -122,6 +124,7 @@ async def create_agent(
             config["language"],
             now,
             now,
+            (welcome_message or "").strip() or None,
         ),
     )
     await db.commit()

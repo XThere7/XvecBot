@@ -26,6 +26,16 @@ log = get_logger(__name__)
 # tiers (paid models, rate limits, context windows) can be introduced without
 # changing the structure or the callers.
 SUPPORTED_MODELS: dict[str, dict] = {
+    "meta-llama/llama-3.1-8b-instruct": {
+        "name": "Llama 3.1 8B Instruct",
+        "tier": "paid",
+        "max_tokens": 4096,
+    },
+    "openrouter/auto": {
+        "name": "OpenRouter Auto",
+        "tier": "paid",
+        "max_tokens": 4096,
+    },
     "meta-llama/llama-3.3-70b-instruct:free": {
         "name": "Llama 3.3 70B Instruct",
         "tier": "free",
@@ -48,7 +58,13 @@ SUPPORTED_MODELS: dict[str, dict] = {
     },
 }
 
-DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+# NOTE (2026-09-30): the previous default, meta-llama/llama-3.3-70b-instruct:free,
+# now returns HTTP 404 from OpenRouter ("unavailable for free"), as do the other
+# two pinned free models; openrouter/free is rate limited on a daily quota. With
+# every free entry unusable the default was moved to a live model so a newly
+# created agent can actually answer. The free entries are kept so they become
+# selectable again if OpenRouter reinstates them or the quota resets.
+DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct"
 
 
 def is_model_allowed(model_string: str) -> bool:

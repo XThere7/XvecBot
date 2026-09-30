@@ -51,12 +51,16 @@ class Agent(BaseModel):
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     system_prompt: str = Field(..., min_length=1)
-    model: str = Field(default="meta-llama/llama-3.3-70b-instruct:free", min_length=1)
+    model: str = Field(default="meta-llama/llama-3.1-8b-instruct", min_length=1)
     description: Optional[str] = None
     # No ge/le here: the service clamps via agent_config.validate_temperature
     # so an out-of-range value is corrected rather than rejected.
     temperature: float = Field(default=0.7)
     language: str = Field(default="English", max_length=50)
+    # Shown by the embeddable widget as its first (visual-only) message.
+    # Optional at create time; a NULL value makes the public API fall back to
+    # the default greeting.
+    welcome_message: Optional[str] = Field(default=None, max_length=500)
 
 
 class AgentUpdate(BaseModel):

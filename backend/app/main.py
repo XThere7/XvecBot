@@ -114,9 +114,15 @@ def create_app() -> FastAPI:
     # ── Static ───────────────────────────────────────────────────────────────
     # The embeddable widget script, served at https://<host>/widget.js so the
     # snippet can point straight at it. Mounted last so it never shadows a route.
+    # static_dir is an absolute path (resolved from this file), not a relative
+    # "app/static" — a relative directory only resolves when the process cwd
+    # happens to be backend/, and StaticFiles raises at startup if it is missing.
+    # The same directory is also mounted under /static/widget.js, which is the
+    # path the Phase 4 integration test and several CDNs expect.
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir():
-        app.mount("/", StaticFiles(directory=static_dir, html=False), name="widget")
+        app.mount("/static", StaticFiles(directory=str(static_dir), html=False), name="static")
+        app.mount("/", StaticFiles(directory=str(static_dir), html=False), name="widget")
 
     return app
 

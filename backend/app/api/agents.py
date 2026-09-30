@@ -40,6 +40,7 @@ async def create_agent(
             model=payload.model,
             temperature=payload.temperature,
             language=payload.language,
+            welcome_message=payload.welcome_message,
         )
     return agent
 
