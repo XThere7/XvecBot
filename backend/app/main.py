@@ -13,10 +13,12 @@ API docs (auto-generated):
   http://localhost:8000/docs
 """
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .api import agents, auth, documents, embed_tokens, health, public, query, upload, workspaces
 from .core.config import settings
@@ -98,6 +100,13 @@ def create_app() -> FastAPI:
     app.include_router(embed_tokens.router)
     app.include_router(upload.router, prefix="/api/v1")
     app.include_router(query.router,  prefix="/api/v1")
+
+    # ── Static ───────────────────────────────────────────────────────────────
+    # The embeddable widget script, served at https://<host>/widget.js so the
+    # snippet can point straight at it. Mounted last so it never shadows a route.
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=static_dir, html=False), name="widget")
 
     return app
 

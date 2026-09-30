@@ -130,15 +130,12 @@ def _build_snippet(token: str) -> str:
     """Ready-to-paste HTML snippet for embedding the widget."""
     base = settings.app_public_url.rstrip("/")
     return (
-        f'<!-- XvecBot Widget -->\n'
-        f'<div id="xvecbot-widget"></div>\n'
-        f'<script>\n'
-        f'  window.XvecBotConfig = {{\n'
-        f'    apiUrl: "{base}",\n'
-        f'    token: "{token}"\n'
-        f'  }};\n'
-        f'</script>\n'
-        f'<script src="{base}/widget.js" async></script>'
+        "<!-- XvecBot chat widget -->\n"
+        f'<script src="{base}/widget.js"\n'
+        f'        data-agent="{token}"\n'
+        f'        data-position="right"\n'
+        f'        data-color="#6366f1"\n'
+        f"        async></script>"
     )
 
 
