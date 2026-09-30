@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from .api import agents, auth, documents, health, query, upload, workspaces
+from .api import agents, auth, documents, health, public, query, upload, workspaces
 from .core.config import settings
 from .core.database import init_db
 from .core.logging import get_logger, setup_logging
@@ -94,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(workspaces.router)
     app.include_router(documents.router)
     app.include_router(agents.router)
+    app.include_router(public.router)
     app.include_router(upload.router, prefix="/api/v1")
     app.include_router(query.router,  prefix="/api/v1")
 
