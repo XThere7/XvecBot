@@ -22,9 +22,16 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
-    container_name: rag-frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-XvecBot}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+    container_name: xvecbot-dashboard
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
     ports:
-      - "80:80"
+      - "3000:3000"
     depends_on:
       backend:
         condition: service_healthy

@@ -1,5 +1,5 @@
 # ── Secrets: never commit real keys ──────────────────────────────────────────
-# Covers root .env, frontend/.env, backend/.env (any depth).
+# Covers root .env, BaseBot_UI/.env, backend/.env (any depth).
 # Template files (.env.example) are safe — the pattern below does NOT match them.
 .env
 .env.local
@@ -39,8 +39,10 @@ ip-tmp/
 
 # ── Node / frontend build ────────────────────────────────────────────────────
 node_modules/
-frontend/dist/
-
+BaseBot_UI/.next/
+frontendbot.md
+PHASE2&3.MD
+README.md
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 
