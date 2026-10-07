@@ -1,0 +1,278 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   XvecBot Dashboard — Design tokens
+   Dark-primary. Semantic tokens only; components never hardcode hex.
+   ========================================================================== */
+
+@theme {
+  /* --- Accent --- */
+  --color-accent-300: #a5b4fc;
+  --color-accent-400: #818cf8;
+  --color-accent-500: #6366f1;
+  --color-accent-600: #4f46e5;
+  --color-accent-tint: rgba(99, 102, 241, 0.12);
+
+  /* --- Surfaces --- */
+  --color-canvas: #0b0d12;
+  --color-surface: #12151c;
+  --color-surface-raised: #181b23;
+  --color-surface-hover: #1e222c;
+  --color-inset: #0e1116;
+
+  /* --- Borders --- */
+  --color-subtle: #22262f;
+  --color-strong: #2e3441;
+
+  /* --- Text --- */
+  --color-primary: #e8eaf0;
+  --color-secondary: #9aa3b2;
+  --color-tertiary: #6b7280;
+  --color-inverse: #0b0d12;
+
+  /* --- Semantic --- */
+  --color-success-500: #22c55e;
+  --color-success-400: #4ade80;
+  --color-warning-500: #f59e0b;
+  --color-warning-400: #fbbf24;
+  --color-danger-500: #ef4444;
+  --color-danger-400: #f87171;
+  --color-info-500: #3b82f6;
+  --color-info-400: #60a5fa;
+  --color-neutral-500: #6b7280;
+
+  /* --- Typography --- */
+  --font-sans:
+    var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-2xs: [11px, { line-height: "16px", font-weight: "500" }];
+  --text-xs: [12px, { line-height: "16px", font-weight: "500" }];
+  --text-sm: [13px, { line-height: "20px", font-weight: "400" }];
+  --text-base: [14px, { line-height: "20px", font-weight: "400" }];
+  --text-lg: [16px, { line-height: "24px", font-weight: "600" }];
+  --text-xl: [20px, { line-height: "28px", font-weight: "600" }];
+  --text-2xl: [24px, { line-height: "32px", font-weight: "600" }];
+
+  /* --- Radius --- */
+  --radius-chip: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* --- Elevation --- */
+  --shadow-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-elevation-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-elevation-3: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* --- Motion --- */
+  --animate-shimmer: shimmer 1.8s ease-in-out infinite;
+  --animate-pulse-dot: pulse-dot 1.4s ease-in-out infinite;
+  --animate-indeterminate: indeterminate 1.6s ease-in-out infinite;
+  --animate-shiny: shiny 4s linear infinite;
+  --animate-meteor: meteor 3s linear infinite;
+  --animate-marquee: marquee 32s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes shiny {
+  0% {
+    background-position: 100%;
+  }
+  100% {
+    background-position: -200%;
+  }
+}
+
+@keyframes meteor {
+  0% {
+    transform: rotate(215deg) translateX(0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(215deg) translateX(-380px);
+    opacity: 0;
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ============================================================================
+   Light theme
+   Dark is the default; this is an opt-in alternative. Every utility references
+   the semantic tokens, so overriding the custom properties is all it takes —
+   no component changes.
+   ========================================================================== */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-canvas: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: #eef1f6;
+  --color-inset: #eef1f6;
+
+  --color-subtle: #e3e7ee;
+  --color-strong: #c9d1dd;
+
+  --color-primary: #14181f;
+  --color-secondary: #4b5563;
+  --color-tertiary: #6b7280;
+  --color-inverse: #ffffff;
+
+  --color-accent-tint: rgba(99, 102, 241, 0.1);
+}
+
+/* ============================================================================
+   Base
+   ========================================================================== */
+
+@layer base {
+  * {
+    border-color: var(--color-subtle);
+  }
+
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-tint);
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-tertiary);
+  }
+
+  /* Number inputs are never used in this product. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-strong);
+    border: 2px solid var(--color-canvas);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a4150;
+  }
+}
+
+/* ============================================================================
+   Component utilities (design-system escapes, used sparingly)
+   ========================================================================== */
+
+@utility focus-ring {
+  outline: none;
+}
+
+@utility skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-inset) 0%,
+    var(--color-surface-raised) 50%,
+    var(--color-inset) 100%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* ============================================================================
+   Reduced motion — every animation degrades to a static state.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .skeleton-shimmer {
+    animation: none !important;
+    background-image: none;
+    background-color: var(--color-inset);
+  }
+}
