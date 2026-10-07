@@ -327,8 +327,9 @@ async def get_snippet(
     async with get_db() as db:
         row = await _get_owned_token(db, workspace_id, agent_id, token_id, user)
 
-    # Full token is returned here (JWT-protected) so the owner can copy it.
+    # The dashboard already holds a JWT, so return the unmasked value here.
+    # The list/get/update representations remain masked.
     return EmbedSnippet(
         snippet=_build_snippet(row["token"]),
-        token=_mask_token(row["token"]),
+        token=row["token"],
     )

@@ -64,6 +64,7 @@ class EmbedTokenCreated(EmbedTokenRead):
 
 class EmbedSnippet(BaseModel):
     snippet: str
+    # Full token; this response is JWT-protected and intended for copy/paste.
     token: str
 
 

@@ -15,7 +15,7 @@ cd ..
 
 # 2. Frontend deps
 echo "[2/4] Installing Node dependencies..."
-cd frontend
+cd BaseBot_UI
 npm install
 cd ..
 
@@ -35,4 +35,4 @@ echo ""
 echo "Setup complete! LLM is OpenRouter (cloud API — no local model needed):"
 echo "  1. Get a key at https://openrouter.ai/keys and set OPENROUTER_API_KEY in .env"
 echo "  Backend:  cd backend && source .venv/bin/activate && uvicorn app.main:app --reload"
-echo "  Frontend: cd frontend && npm run dev"
+echo "  Frontend: cd BaseBot_UI && npm run dev"
