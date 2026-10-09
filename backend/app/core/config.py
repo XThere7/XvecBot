@@ -49,7 +49,10 @@ class Settings(BaseSettings):
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./data/rag.db"
-    vector_db_path: str = "./data/embeddings/vectors.db"
+    vector_db_path: str = "./data/embeddings/vectors.db"  # legacy (unused) — see Phase 2
+    # Postgres pool (Neon). Only used when database_url is postgresql://…
+    pg_pool_min_size: int = 2
+    pg_pool_max_size: int = 10
 
     # ── Storage ──────────────────────────────────────────────────────────────
     upload_dir: str = "./data/uploads"
@@ -134,6 +137,10 @@ class Settings(BaseSettings):
 
     @property
     def database_path(self) -> Path:
+        if self.is_postgres:
+            raise RuntimeError(
+                "database_path is SQLite-only; use asyncpg_dsn on Postgres"
+            )
         # Handle sqlite:/// prefix
         raw = self.database_url.replace("sqlite:///", "")
         p = Path(raw)
@@ -143,6 +150,21 @@ class Settings(BaseSettings):
         resolved = (_PROJECT_ROOT / raw).resolve()
         resolved.parent.mkdir(parents=True, exist_ok=True)
         return resolved
+
+    # ── Postgres helpers (Neon production) ─────────────────────────────────
+    @property
+    def is_postgres(self) -> bool:
+        """True when DATABASE_URL points at Postgres (Neon/RDS/Cloud SQL)."""
+        u = (self.database_url or "").strip().lower()
+        return u.startswith(("postgresql://", "postgres://", "postgresql+asyncpg://"))
+
+    @property
+    def asyncpg_dsn(self) -> str:
+        """DSN for asyncpg: strip any +asyncpg driver prefix."""
+        u = (self.database_url or "").strip()
+        if u.lower().startswith("postgresql+asyncpg://"):
+            u = "postgresql://" + u.split("://", 1)[1]
+        return u
 
 
 @lru_cache

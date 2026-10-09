@@ -23,7 +23,13 @@ rank-bm25==0.2.2
 sqlite-vec==0.1.6
 
 # ── Database ──────────────────────────────────────────────────────────────────
+# SQLite path (legacy dual-driver, kept during Neon migration — do not drop yet)
 aiosqlite==0.20.0
+# Postgres path (Neon production: asyncpg driver + SQLAlchemy + Alembic + pgvector)
+SQLAlchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+pgvector==0.3.6
 
 # ── Config / Utils ───────────────────────────────────────────────────────────
 pydantic==2.10.3
