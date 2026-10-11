@@ -63,7 +63,10 @@ CREATE TABLE IF NOT EXISTS workspace_documents (
     size_bytes    INTEGER NOT NULL DEFAULT 0,
     status        TEXT NOT NULL DEFAULT 'uploaded',
     chunk_count   INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    object_key    TEXT,
+    content_type  TEXT,
+    etag          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_workspace_docs_ws ON workspace_documents(workspace_id);
 
@@ -157,4 +160,9 @@ PG_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
     "agents": {"welcome_message": "TEXT"},
     "chunks": {"workspace_id": "TEXT", "doc_id": "TEXT"},
     "chunk_embeddings": {"workspace_id": "TEXT", "doc_id": "TEXT"},
+    "workspace_documents": {
+        "object_key": "TEXT",
+        "content_type": "TEXT",
+        "etag": "TEXT",
+    },
 }

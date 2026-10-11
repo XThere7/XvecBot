@@ -48,7 +48,11 @@ structlog==24.4.0
 # ── LLM (sole provider: OpenRouter via httpx — no local inference deps) ──────
 # httpx (kept above under Config/Utils) is the OpenRouter HTTP client.
 
+# ── Object storage (Phase 2: R2/S3 presigned uploads; local disk stays default) ──
+boto3==1.34.162
+
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0
 httpx==0.28.0
+moto[s3]==5.0.18  # S3 mock for storage tests (no network)

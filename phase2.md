@@ -879,12 +879,13 @@ cd /home/jteckz7/Xvec-chat/backend
 ../.venv/bin/python -m pytest app/tests -q
 ```
 
-Expected: `12 passed, 4 skipped` and **1 known pre-existing failure**:
+Expected: `19 passed, 4 skipped` and **1 known pre-existing failure**:
 `test_api_query.py::test_query_returns_answer_with_mock_llm`
 (error: `'citations' is already being used as a state key`).
 This is a LangGraph version issue in the Phase 1 pipeline, unrelated to Phase 2.
 Phase 1's `/api/v1/query/` is therefore still broken — workspace chat
 (§6) is the working chat path and is unaffected.
+The 19 passes include the 7 presigned-storage tests (§13.5).
 
 ---
 
@@ -947,6 +948,9 @@ curl -s -o /dev/null -w "delete ws  -> %{http_code}\n" -X DELETE $B/workspaces/$
 | POST | `/workspaces/{id}/documents/{doc_id}/train` | JWT | 202 / 200 / 409 |
 | GET | `/workspaces/{id}/documents/{doc_id}/status` | JWT | poll training |
 | POST | `/workspaces/{id}/chat` | JWT | workspace-scoped RAG answer |
+| POST | `/workspaces/{id}/documents/upload-url` | JWT | 201 presigned PUT (needs S3_BUCKET, else 501) |
+| POST | `/workspaces/{id}/documents/{doc_id}/complete-upload` | JWT | HEAD-verify + flip to `uploaded` |
+| GET | `/workspaces/{id}/documents/{doc_id}/download-url` | JWT | presigned GET (needs S3_BUCKET, else 501) |
 
 ### Document status lifecycle
 
@@ -965,6 +969,14 @@ uploaded ──train──► processing ──► ready
 | `ACCESS_TOKEN_EXPIRE_DAYS` | `7` | Token lifetime |
 | `UPLOAD_DIR` | `./uploads` | Phase 2 upload root |
 | `upload_dir` | `./data/uploads` | Legacy Phase 1 uploads (duplication, cleanup pending) |
+| `storage_backend` | `auto` | `auto` (S3 when configured) \| `local` \| `s3` |
+| `S3_BUCKET` | *(empty = local disk)* | Set to activate R2/S3 presigned flow |
+| `S3_PREFIX` | `xvecbot` | Key prefix: `<prefix>/workspaces/<ws>/<doc>_<file>` |
+| `S3_ENDPOINT_URL` | *(empty)* | R2: `https://<accountid>.r2.cloudflarestorage.com` |
+| `S3_REGION` | `auto` | Object-storage region |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | *(empty)* | Storage credentials (never commit) |
+| `presigned_put_expires` / `presigned_get_expires` | `900` | Presigned URL lifetime (seconds) |
+| `max_upload_bytes` | `52428800` (50 MB) | Enforced at mint + complete-upload |
 | `LLM_FALLBACK_MODEL` | `openrouter/free` | Model used when the primary fails retryably; empty disables |
 
 ### Data model
@@ -979,3 +991,120 @@ users ──1:N──► workspaces ──1:N──► workspace_documents
 
 Retrieval filters on `chunks.workspace_id` **and** requires the source document
 status to be `ready`, so a tenant can only ever see their own trained content.
+
+---
+
+## 13. Production Phase 2 — R2/S3 Presigned Uploads (Neon-ready)
+
+Execution record for the production-readiness work completed **2026-10-11**,
+commit `05661c4` on branch `phase2` (local commit, unpushed at write time).
+Goal: prepare the platform for real production hosting (Neon Postgres +
+pgvector, R2/S3 object storage) **without breaking local development**.
+
+### 13.1 Design rule
+
+Every production addition ships as a **new driver behind env**, never
+replacing the local default:
+
+| Concern | Local default (unchanged) | Production (env-gated) |
+|---|---|---|
+| Database | SQLite `data/rag.db` + sqlite-vec | Neon, when `DATABASE_URL=postgresql://…` |
+| File bytes | Local disk (`upload_document` endpoint) | R2/S3, when `S3_BUCKET` is set |
+| Migrations | `init_db()` idempotent DDL | Alembic `0001` + `0002` revisions |
+
+### 13.2 What was built
+
+**New files**
+
+| File | Purpose |
+|---|---|
+| `backend/app/storage/object_store.py` | `LocalBackend` + `S3Backend` (boto3, R2 via `endpoint_url`), `build_object_key` (traversal-safe), `get_storage()` singleton on `settings.use_s3_storage` |
+| `backend/app/tests/test_storage_presigned.py` | 7 tests (see §13.5) |
+| `backend/alembic/versions/0002_ws_docs_object_storage.py` | `object_key` / `content_type` / `etag` on `workspace_documents` |
+| `scripts/backfill_uploads_to_r2.py` | `--dry-run` / `--copy` local → R2 backfill, idempotent |
+
+**Modified files**
+
+| File | Change |
+|---|---|
+| `backend/app/core/config.py` | S3/R2 settings + `is_s3_configured` / `use_s3_storage` switches |
+| `backend/app/core/database.py` | New columns in SQLite CREATE + runtime ensure (existing dev DBs self-heal at boot) |
+| `backend/app/core/pg_schema.py` | Same columns in baseline + additive map (existing Neon DBs via `0002`) |
+| `backend/app/models/workspace.py` | `WorkspaceDocument.object_key/content_type/etag`, `pending_upload` status, mirrored DDL |
+| `backend/app/api/documents.py` | `upload-url` / `complete-upload` / `download-url` endpoints (§13.3) |
+| `backend/app/api/workspaces.py` | Workspace delete now sweeps objects + S3 prefix (or local dir) — orphan-bytes bug fixed |
+| `backend/app/services/workspace_training_service.py` | Reads object bytes to tempfile when `object_key` + S3, else local `file_path` |
+| `requirements.txt` | `boto3==1.34.162`, `moto[s3]==5.0.18` (tests only) |
+
+Schema note: timestamps stay TEXT and booleans INTEGER in the pg baseline
+(deliberate zero-churn choice); TIMESTAMPTZ/BOOLEAN is a follow-up with model
+updates.
+
+### 13.3 Presigned flow walkthrough
+
+```bash
+B=http://localhost:8000
+# 1. Mint (needs S3_BUCKET + creds, else HTTP 501)
+URL=$(curl -s -X POST $B/workspaces/$WS/documents/upload-url -H "$AUTH" \
+  -H 'Content-Type: application/json' -d '{"filename":"notes.txt"}' \
+  | $PY -c "import sys,json;d=json.load(sys.stdin);print(d['url'])")
+DOC=<doc_id from step 1 response>
+
+# 2. PUT bytes straight to storage (browser -> R2, never via FastAPI)
+curl -s -X PUT "$URL" -H 'Content-Type: text/plain' --data-binary @/tmp/notes.txt
+
+# 3. Verify + mark uploaded (400 if PUT not done yet, 413 if > 50 MB)
+curl -s -X POST $B/workspaces/$WS/documents/$DOC/complete-upload -H "$AUTH"
+
+# 4. Train as usual (worker downloads from storage to tempfile)
+curl -s -X POST $B/workspaces/$WS/documents/$DOC/train -H "$AUTH"
+
+# 5. Download later via short-lived URL
+curl -s $B/workspaces/$WS/documents/$DOC/download-url -H "$AUTH"
+```
+
+Status lifecycle with presigned flow:
+
+```
+pending_upload ──complete──► uploaded ──train──► processing ──► ready
+```
+
+### 13.4 Backfill (existing local files → R2)
+
+```bash
+.venv/bin/python scripts/backfill_uploads_to_r2.py --dry-run   # lists pending docs
+S3_BUCKET=... S3_ENDPOINT_URL=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
+  .venv/bin/python scripts/backfill_uploads_to_r2.py --copy
+```
+
+Idempotent (skips rows with `object_key`); local files left in place until
+training-from-storage is verified.
+
+### 13.5 Tests + verification results (2026-10-11)
+
+| Check | Result |
+|---|---|
+| New `test_storage_presigned.py` (key/content-type units, local roundtrip, moto-S3 roundtrip + presigned URLs, 501-gating, full upload→complete→download incl. 400-pre-PUT + 400-exe-reject, legacy upload intact) | **7/7 PASS** |
+| Full suite | **19 passed, 4 skipped** (HF downloads), 1 pre-existing LangGraph fail |
+| Alembic `0001 → 0002` on a 0001 DB | PASS (columns + version row verified) |
+| Backfill `--dry-run` | PASS (lists real pending docs) |
+| Legacy regression on throwaway DB: upload→delete leaves 0 files; workspace delete removes dir | PASS |
+| PG re-verification: CRUD, vector KNN, `/health` + `/health/ready` 200 `database: ok` | PASS |
+| SQLite→Neon copy parity | 448 rows + 41 embeddings, counts identical |
+
+### 13.6 Operational notes (read before hosting)
+
+1. **Rotate `OPENROUTER_API_KEY`.** A live key sits in untracked `.env`
+   (and was once committed). `docker/Dockerfile.backend` still does
+   `COPY .env .` — remove before building prod images (Phase 3).
+2. **`rag-backend` compose container (project `docker`) runs as root with a
+   bind mount on `data/` and zeroed `data/rag.db` on 2026-10-11.** It was
+   stopped during this work (restart: `docker compose up -d backend`); Phase 4
+   must add `user:` + named volumes or it will clobber host data again.
+3. The dev DB was rebuilt from the `xvec-pg-verify` Postgres copy
+   (16 docs / 23 users / 20 workspaces / 21 agents / 99 convs / 202 msgs /
+   52 chunks / 41 embeddings). Durable backup:
+   `~/.xvec-backups/rag.db.phase2-start-2026-10-11` (do **not** rely on
+   `/tmp` — it gets wiped between sessions).
+4. The pytest suite writes users/workspaces into the real `data/rag.db`
+   (test isolation is queued for Phase 3/4); dev DB was restored after runs.

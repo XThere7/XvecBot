@@ -2,16 +2,21 @@
 api/workspaces.py
 Workspace CRUD — multi-tenant, every route scoped to the authenticated owner.
 """
+import asyncio
+import shutil
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
 from ..models.workspace import WorkspaceCreate, WorkspaceUpdate
 from ..storage import vector_store
+from ..storage.object_store import get_storage
 from .deps import get_current_user
 
 log = get_logger(__name__)
@@ -140,12 +145,62 @@ async def delete_workspace(
         if workspace is None:
             raise _not_found()
 
+        # Collect stored bytes locations BEFORE row deletes (Phase 2: fix the
+        # orphan bug — local files and R2/S3 objects are removed too).
+        async with db.execute(
+            "SELECT * FROM workspace_documents WHERE workspace_id = ?",
+            (workspace_id,),
+        ) as cur:
+            doc_rows = [dict(r) for r in await cur.fetchall()]
+
         await vector_store.delete_by_workspace(db, workspace_id)
         await db.execute(
             "DELETE FROM workspace_documents WHERE workspace_id = ?", (workspace_id,)
         )
         await db.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
         await db.commit()
+
+    # Best-effort byte cleanup outside the transaction (never fails the delete).
+    for doc in doc_rows:
+        try:
+            if doc.get("file_path"):
+                Path(doc["file_path"]).unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            if doc.get("object_key") and settings.use_s3_storage:
+                await asyncio.to_thread(
+                    get_storage().delete_object, doc["object_key"]
+                )
+        except Exception as exc:
+            log.warning(
+                "Workspace object cleanup failed",
+                workspace_id=workspace_id,
+                error=str(exc),
+            )
+    if settings.use_s3_storage:
+        # Prefix sweep catches objects outside the per-row keys (defensive).
+        try:
+            prefix = (
+                f"{settings.s3_prefix.strip().strip('/')}/workspaces/{workspace_id}"
+                if settings.s3_prefix.strip()
+                else f"workspaces/{workspace_id}"
+            )
+            await asyncio.to_thread(get_storage().delete_prefix, prefix)
+        except Exception as exc:
+            log.warning(
+                "Workspace prefix sweep failed",
+                workspace_id=workspace_id,
+                error=str(exc),
+            )
+    else:
+        # Local backend: drop the workspace upload directory.
+        try:
+            shutil.rmtree(
+                settings.workspace_upload_path / workspace_id, ignore_errors=True
+            )
+        except Exception:
+            pass
 
     log.info("Workspace deleted", workspace_id=workspace_id, owner_id=user["id"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
