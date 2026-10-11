@@ -1,0 +1,17 @@
+# Speed up + slim down Docker build context (6GB .venv + 500MB node_modules excluded)
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.git/
+BaseBot_UI/node_modules/
+BaseBot_UI/.next/
+data/*.db
+data/*.sqlite*
+data/*.db-wal
+data/*.db-shm
+*.log
+.DS_Store
+ip-tmp/
