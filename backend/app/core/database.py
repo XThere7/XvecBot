@@ -1,13 +1,18 @@
 """
 core/database.py
-Async SQLite connection pool via aiosqlite.
-Bootstraps the full schema (documents, chunks, conversations, messages)
-and loads the sqlite-vec extension for vector similarity search.
+Dual-driver database bootstrap (Phase 0+1):
+  - SQLite (default, local dev/tests): aiosqlite + sqlite-vec, as before.
+  - Postgres (Neon production): asyncpg pool via core.pg_pool + DDL from
+    core.pg_schema, with the aiosqlite-compatible wrapper in core.pg_compat
+    so existing `db.execute("... ? ...")` call sites run unchanged.
+
+Routing key is settings.is_postgres (DATABASE_URL scheme). The SQLite path
+is byte-for-byte the previous behaviour.
 """
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Union
 
 import aiosqlite
 import sqlite_vec
@@ -17,9 +22,20 @@ from .logging import get_logger
 
 log = get_logger(__name__)
 
+
+def _is_pg() -> bool:
+    try:
+        return bool(settings.is_postgres)
+    except Exception:
+        return False
+
+
 # Resolve DB path via settings.database_path (handles relative vs absolute + project root)
-_DB_PATH = settings.database_path
-_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Postgres has no local file — keep None so import never mkdir()s a URL-shaped path.
+_DB_PATH: Path | None = None
+if not _is_pg():
+    _DB_PATH = settings.database_path
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _load_vec_extension(conn: sqlite3.Connection) -> None:
@@ -225,8 +241,48 @@ async def _drop_deprecated_columns(
         log.info("Deprecated columns removed", table=table, columns=sorted(dropped))
 
 
+async def _init_db_postgres() -> None:
+    """Create all Postgres tables (Neon). Idempotent — safe every startup."""
+    from .pg_pool import get_pg_pool
+    from .pg_schema import PG_ANN_INDEX, PG_PREABLE, PG_TABLES
+
+    log.info("Initialising Postgres database")
+    pool = await get_pg_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(PG_PREABLE)
+        for stmt in (s.strip() for s in PG_TABLES.split(";")):
+            if stmt:
+                await conn.execute(stmt)
+        # Additive columns for pre-existing tables (idempotent).
+        from .pg_schema import PG_ADDITIVE_COLUMNS
+
+        for table, columns in PG_ADDITIVE_COLUMNS.items():
+            for column, definition in columns.items():
+                await conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
+                    f"{column} {definition}"
+                )
+        # Drop the superseded messages.sources column (no-op when absent).
+        await conn.execute("ALTER TABLE messages DROP COLUMN IF EXISTS sources")
+        # Best-effort ANN index — must never fail boot.
+        try:
+            await conn.execute(PG_ANN_INDEX)
+        except Exception as exc:
+            log.warning("pgvector ANN index skipped", error=str(exc))
+    # Dispose the boot pool: its connections registered the vector codec
+    # before CREATE EXTENSION ran. Fresh pools get a working codec.
+    from .pg_pool import close_pg_pool as _close_pg_pool
+
+    await _close_pg_pool()
+    log.info("Postgres database ready")
+
+
 async def init_db() -> None:
     """Create all tables. Safe to call on every startup (IF NOT EXISTS)."""
+    if _is_pg():
+        await _init_db_postgres()
+        return
+    assert _DB_PATH is not None, "SQLite path expected non-Postgres DATABASE_URL"
     log.info("Initialising database", path=str(_DB_PATH))
     async with aiosqlite.connect(_DB_PATH) as db:
         await db.enable_load_extension(True)
@@ -259,15 +315,32 @@ async def init_db() -> None:
 
 
 @asynccontextmanager
-async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
+async def get_db() -> AsyncGenerator[Union[aiosqlite.Connection, object], None]:
     """
-    Async context manager that yields a database connection with
-    sqlite-vec loaded and foreign keys enabled.
+    Async context manager yielding a database connection.
+
+    SQLite (default): aiosqlite connection with sqlite-vec loaded, as before.
+    Postgres (Neon): PgConn wrapper (core.pg_compat) with the same
+        execute/commit/rollback surface and `?` placeholders translated.
 
     Usage:
         async with get_db() as db:
             rows = await db.execute("SELECT ...")
     """
+    if _is_pg():
+        from .pg_compat import PgConn
+        from .pg_pool import get_pg_pool
+
+        pool = await get_pg_pool()
+        conn = await pool.acquire()
+        try:
+            yield PgConn(conn)
+        except Exception:
+            raise
+        finally:
+            await pool.release(conn)
+        return
+    assert _DB_PATH is not None, "SQLite path expected non-Postgres DATABASE_URL"
     async with aiosqlite.connect(_DB_PATH) as db:
         await db.enable_load_extension(True)
         await db.load_extension(sqlite_vec.loadable_path())

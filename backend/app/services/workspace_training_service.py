@@ -41,12 +41,23 @@ async def _set_status(
     await db.commit()
 
 
-async def _ensure_chunk_metadata_columns(db: aiosqlite.Connection) -> None:
+async def _ensure_chunk_metadata_columns(db) -> None:
     """
     Add workspace_id / doc_id columns to chunks if missing.
     SQLite has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so guard via PRAGMA —
     existing data is untouched, columns are only added when absent.
+    Postgres baseline already includes both columns; ADD COLUMN IF EXISTS path.
     """
+    try:
+        from ..core.pg_compat import PgConn
+
+        if isinstance(db, PgConn):
+            await db.execute("ALTER TABLE chunks ADD COLUMN IF NOT EXISTS workspace_id TEXT")
+            await db.execute("ALTER TABLE chunks ADD COLUMN IF NOT EXISTS doc_id TEXT")
+            await db.commit()
+            return
+    except Exception:
+        pass
     async with db.execute("PRAGMA table_info(chunks)") as cur:
         existing = {row["name"] for row in await cur.fetchall()}
     for column in ("workspace_id", "doc_id"):

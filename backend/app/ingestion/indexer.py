@@ -50,7 +50,13 @@ async def index_chunks(
             workspace_id=metadata.get("workspace_id"),
             doc_id=metadata.get("doc_id"),
         )
-        await insert_embedding(db, chunk_id, embedding)
+        await insert_embedding(
+            db,
+            chunk_id,
+            embedding,
+            workspace_id=metadata.get("workspace_id"),
+            doc_id=metadata.get("doc_id"),
+        )
         chunk_ids.append(chunk_id)
 
     await db.commit()

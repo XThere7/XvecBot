@@ -1,10 +1,11 @@
 """
-storage/vector_store.py
-All vector operations against the sqlite-vec virtual table (chunk_embeddings).
-Provides insert, similarity search, and delete by document.
+storage/vector_store.py (Phase 0+1: dual-driver)
+SQLite (default): sqlite-vec virtual table (chunk_embeddings), as before.
+Postgres (Neon): pgvector `vector(384)` column + `<=>` KNN with in-SQL
+workspace/document filtering (replaces the SQLite over-fetch + Python filter).
 """
 import struct
-from typing import Optional
+from typing import Any, Optional
 
 import aiosqlite
 
@@ -14,17 +15,52 @@ from ..core.logging import get_logger
 log = get_logger(__name__)
 
 
+def _is_pg_conn(db: Any) -> bool:
+    try:
+        from ..core.pg_compat import PgConn
+
+        if isinstance(db, PgConn):
+            return True
+    except Exception:
+        pass
+    try:
+        return bool(settings.is_postgres)
+    except Exception:
+        return False
+
+
 def _serialize_vector(vector: list[float]) -> bytes:
     """Pack a list of floats into the binary format sqlite-vec expects."""
     return struct.pack(f"{len(vector)}f", *vector)
 
 
 async def insert_embedding(
-    db: aiosqlite.Connection,
+    db: Any,
     chunk_id: str,
     embedding: list[float],
+    workspace_id: Optional[str] = None,
+    doc_id: Optional[str] = None,
 ) -> None:
-    """Store a single chunk embedding."""
+    """Store a single chunk embedding (upsert).
+
+    workspace_id/doc_id are stored on the Postgres row so KNN can filter
+    in-SQL. On SQLite they are ignored (filtering joins via chunks there).
+    New kwargs are optional — existing callers keep working.
+    """
+    if _is_pg_conn(db):
+        from ..core.pg_pool import ensure_vector_codec
+
+        await ensure_vector_codec(db.raw)
+        await db.execute(
+            """INSERT INTO chunk_embeddings (chunk_id, workspace_id, doc_id, embedding)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (chunk_id) DO UPDATE SET
+                 embedding = EXCLUDED.embedding,
+                 workspace_id = EXCLUDED.workspace_id,
+                 doc_id = EXCLUDED.doc_id""",
+            (chunk_id, workspace_id, doc_id, embedding),
+        )
+        return
     vec_bytes = _serialize_vector(embedding)
     await db.execute(
         "INSERT OR REPLACE INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)",
@@ -33,7 +69,7 @@ async def insert_embedding(
 
 
 async def search_similar(
-    db: aiosqlite.Connection,
+    db: Any,
     query_vector: list[float],
     top_k: int = 20,
     document_id: Optional[str] = None,
@@ -49,7 +85,36 @@ async def search_similar(
     searched (chunks.workspace_id). These may be combined.
     sqlite-vec does not natively support filtering on a joined/other table in
     vec0 KNN queries, so we over-fetch candidates and filter in Python.
+    Postgres filters in-SQL via JOINs (no over-fetch).
     """
+    if _is_pg_conn(db):
+        from ..core.pg_pool import ensure_vector_codec
+
+        await ensure_vector_codec(db.raw)
+        pg_query = """
+            SELECT ce.chunk_id, (ce.embedding <=> ?) AS distance
+            FROM chunk_embeddings ce
+            JOIN chunks c ON c.id = ce.chunk_id
+            LEFT JOIN workspace_documents wd ON wd.id = c.doc_id
+            WHERE (?::text IS NULL OR c.document_id = ?)
+              AND (?::text IS NULL OR c.workspace_id = ?)
+              AND (?::text IS NULL OR wd.status = 'ready')
+            ORDER BY ce.embedding <=> ?
+            LIMIT ?
+        """
+        params = (
+            query_vector,
+            document_id, document_id,
+            workspace_id, workspace_id,
+            workspace_id,
+            query_vector,
+            top_k,
+        )
+        async with db.execute(pg_query, params) as cur:
+            rows = await cur.fetchall()
+        results = [(r["chunk_id"], float(r["distance"])) for r in rows]
+        log.debug("Vector search complete (pg)", results=len(results))
+        return results
     vec_bytes = _serialize_vector(query_vector)
     filtering = bool(document_id) or bool(workspace_id)
     fetch_k = top_k * 3 if filtering else top_k
@@ -96,7 +161,7 @@ async def search_similar(
 
 
 async def delete_embeddings_for_document(
-    db: aiosqlite.Connection,
+    db: Any,
     document_id: str,
 ) -> int:
     """Delete all embeddings whose chunk belongs to the given document."""
@@ -119,7 +184,7 @@ async def delete_embeddings_for_document(
 
 
 async def delete_by_workspace(
-    db: aiosqlite.Connection,
+    db: Any,
     workspace_id: str,
 ) -> int:
     """
