@@ -76,9 +76,13 @@ class WorkspaceDocument(BaseModel):
     file_path: str
     file_type: Literal["pdf", "txt", "docx"]
     size_bytes: int = 0
-    status: Literal["uploaded", "processing", "ready", "failed"] = "uploaded"
+    status: Literal["uploaded", "processing", "ready", "failed", "pending_upload"] = "uploaded"
     chunk_count: int = 0
     created_at: datetime
+    # Phase 2 object storage (R2/S3 presigned flow). None for legacy local uploads.
+    object_key: Optional[str] = None
+    content_type: Optional[str] = None
+    etag: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -130,7 +134,10 @@ CREATE TABLE IF NOT EXISTS workspace_documents (
     size_bytes    INTEGER NOT NULL DEFAULT 0,
     status        TEXT NOT NULL DEFAULT 'uploaded',
     chunk_count   INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    object_key    TEXT,
+    content_type  TEXT,
+    etag          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_workspace_docs_ws ON workspace_documents(workspace_id);
 """

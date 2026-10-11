@@ -128,10 +128,20 @@ CREATE TABLE IF NOT EXISTS workspace_documents (
     size_bytes    INTEGER NOT NULL DEFAULT 0,
     status        TEXT NOT NULL DEFAULT 'uploaded',
     chunk_count   INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    object_key    TEXT,
+    content_type  TEXT,
+    etag          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_workspace_docs_ws ON workspace_documents(workspace_id);
 """
+
+# Phase 2 — object-storage columns on pre-existing workspace_documents tables.
+WORKSPACE_DOC_OBJECT_COLUMNS = {
+    "object_key": "TEXT",
+    "content_type": "TEXT",
+    "etag": "TEXT",
+}
 
 # Phase 3 — Agent Builder (schemas also documented in models/agent.py)
 CREATE_AGENTS = """
@@ -305,6 +315,10 @@ async def init_db() -> None:
         await _add_columns_if_missing(db, "conversations", AGENT_CONVERSATION_COLUMNS)
         # `agents` gains the Phase 4 widget welcome_message column (idempotent).
         await _add_columns_if_missing(db, "agents", AGENT_TABLE_COLUMNS)
+        # Phase 2 object-storage columns on pre-existing workspace_documents.
+        await _add_columns_if_missing(
+            db, "workspace_documents", WORKSPACE_DOC_OBJECT_COLUMNS
+        )
         # messages reuses `citations` — clean up the superseded `sources` column.
         await _drop_deprecated_columns(db, "messages", DEPRECATED_COLUMNS["messages"])
         await db.execute(

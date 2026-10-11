@@ -7,6 +7,7 @@ Reuses (unmodified): chunker, embedder, indexer, pdf_loader.extract_text_from_fi
 CPU-heavy steps run via asyncio.to_thread so the event loop stays responsive.
 """
 import asyncio
+from pathlib import Path
 from typing import Optional
 
 import aiosqlite
@@ -93,6 +94,48 @@ async def _clear_previous_index(db: aiosqlite.Connection, doc_id: str) -> None:
     await db.commit()
 
 
+async def _extract_doc_text(doc: dict) -> str:
+    """Resolve document bytes (object storage first, local disk fallback).
+
+    Phase 2: presigned-flow documents carry object_key. Their bytes are
+    downloaded to a tempfile (shared-nothing workers have no local disk)
+    and parsed from there. Legacy rows fall through to file_path.
+    """
+    object_key = doc.get("object_key")
+    if object_key:
+        try:
+            from ..core.config import settings
+            from ..storage.object_store import get_storage
+
+            if settings.use_s3_storage:
+                storage = get_storage()
+                data = await asyncio.to_thread(storage.get_object, object_key)
+                suffix = Path(doc.get("filename") or "").suffix.lower() or ".txt"
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=suffix
+                ) as tmp:
+                    tmp.write(data)
+                    tmp_path = tmp.name
+                try:
+                    return await asyncio.to_thread(
+                        extract_text_from_file, tmp_path, doc["file_type"]
+                    )
+                finally:
+                    Path(tmp_path).unlink(missing_ok=True)
+        except Exception as exc:
+            log.warning(
+                "Object-storage read failed, trying local file",
+                doc_id=doc.get("id"),
+                error=str(exc),
+            )
+    # Legacy local path (also the fallback when object read fails).
+    return await asyncio.to_thread(
+        extract_text_from_file, doc["file_path"], doc["file_type"]
+    )
+
+
 async def train_workspace_document(
     doc_id: str,
     db: Optional[aiosqlite.Connection] = None,
@@ -124,9 +167,7 @@ async def train_workspace_document(
         await _set_status(db, doc_id, "processing")
 
         # 1. Extract text (file I/O + parsing — off the event loop)
-        text = await asyncio.to_thread(
-            extract_text_from_file, doc["file_path"], doc["file_type"]
-        )
+        text = await _extract_doc_text(doc)
         if not text.strip():
             log.warning(
                 "Training failed: no extractable text",

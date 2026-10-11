@@ -59,6 +59,21 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"      # Phase 2 workspace uploads root
     processed_dir: str = "./data/processed"
 
+    # ── Object storage (Phase 2: R2/S3 presigned uploads) ─────────────────
+    # Local disk stays the default. S3/R2 activates only when S3_BUCKET is set
+    # (plus credentials + endpoint for R2). Presigned flow never routes bytes
+    # through FastAPI; the legacy UploadFile endpoints keep working unchanged.
+    storage_backend: str = "auto"  # auto | local | s3
+    s3_bucket: str = ""
+    s3_prefix: str = "xvecbot"
+    s3_endpoint_url: str = ""  # R2: https://<accountid>.r2.cloudflarestorage.com
+    s3_region: str = "auto"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    presigned_put_expires: int = 900  # 15 min
+    presigned_get_expires: int = 900  # 15 min
+    max_upload_bytes: int = 50 * 1024 * 1024  # 50 MB (mirrors legacy upload.py)
+
     # ── Embedding ────────────────────────────────────────────────────────────
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimension: int = 384
@@ -165,6 +180,26 @@ class Settings(BaseSettings):
         if u.lower().startswith("postgresql+asyncpg://"):
             u = "postgresql://" + u.split("://", 1)[1]
         return u
+
+    # ── Object-storage helpers ─────────────────────────────────────────────
+    @property
+    def is_s3_configured(self) -> bool:
+        """True only when a bucket (+ R2 endpoint/credentials if needed) is set."""
+        if not (self.s3_bucket or "").strip():
+            return False
+        if (self.storage_backend or "auto").strip().lower() == "local":
+            return False
+        return True
+
+    @property
+    def use_s3_storage(self) -> bool:
+        """Effective switch: explicit 's3' forces, 'auto' follows configuration."""
+        mode = (self.storage_backend or "auto").strip().lower()
+        if mode == "s3":
+            return True
+        if mode == "local":
+            return False
+        return self.is_s3_configured
 
 
 @lru_cache
