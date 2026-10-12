@@ -27,10 +27,21 @@ ENV HF_HOME=/app/.hf-cache \
     HF_HUB_CACHE=/app/.hf-cache
 
 # Create data directories (local-disk fallback; production uses Neon + R2)
-RUN mkdir -p data/uploads data/processed data/embeddings .hf-cache
+# and make them writable for the runtime user (see USER below). The dev
+# compose additionally maps `user: ${UID}:${GID}` so bind-mounted host
+# files keep owner identity instead of becoming root-owned (which once
+# zeroed a developer's data/rag.db).
+RUN mkdir -p data/uploads data/processed data/embeddings .hf-cache \
+ && chmod -R a+rwX data .hf-cache
 
 # Download embedding model at build time so startup is instant
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
+# Run as a non-root user in production. Site-packages stay root-owned
+# (world-readable — imports work); only /app runtime dirs need ownership.
+# Dev compose overrides with `user: ${UID}:${GID}` for bind-mount identity.
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app/data /app/.hf-cache
+USER appuser
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s \

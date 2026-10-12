@@ -9,11 +9,11 @@
 # Differences from docker-compose.yml (local dev):
 #   - no `../data:/app/data` DB mount (state lives in Neon + R2/S3)
 #   - no `env_file` (12-factor env; keeps secrets out of images/files)
-#   - persistent HF model cache volume (no re-download on restart)
+#   - no model-cache volume: weights are baked into the image at build time
+#     (a fresh named volume would hide them and force a re-download)
 #   - UVICORN_WORKERS + ENABLE_DOCS=false by default
 #   - readiness gate is a real 503 now ( Phase 3), so depends_on is reliable
-version: "3.9"
-
+#   - image runs as non-root `appuser` (see Dockerfile.backend USER)
 services:
   backend:
     build:
@@ -24,6 +24,9 @@ services:
       DEBUG: "false"
       ENABLE_DOCS: "false"
       UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to your Neon URL}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY to 32+ random bytes}
       API_KEY: ${API_KEY:?set API_KEY}
@@ -40,8 +43,6 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       HF_HOME: /app/.hf-cache
-    volumes:
-      - hf-cache:/app/.hf-cache
     ports:
       - "8000:8000"
     healthcheck:
@@ -69,6 +70,3 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  hf-cache:
