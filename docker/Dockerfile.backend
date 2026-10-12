@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Never bake secrets: configuration arrives as environment variables
+# (PaaS dashboard) or a runtime-mounted .env — NOT via COPY into the image.
+
 # System deps for PyMuPDF and sqlite-vec
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmupdf-dev gcc curl \
@@ -15,10 +18,16 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
-COPY .env .
 
-# Create data directories
-RUN mkdir -p data/uploads data/processed data/embeddings
+# HuggingFace/transformers cache (embedding + reranker weights). Build-time
+# download below warms it; at runtime set HF_HOME to a persistent volume
+# when the cache must survive restarts.
+ENV HF_HOME=/app/.hf-cache \
+    TRANSFORMERS_CACHE=/app/.hf-cache \
+    HF_HUB_CACHE=/app/.hf-cache
+
+# Create data directories (local-disk fallback; production uses Neon + R2)
+RUN mkdir -p data/uploads data/processed data/embeddings .hf-cache
 
 # Download embedding model at build time so startup is instant
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
@@ -27,4 +36,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s \
     CMD curl -f http://localhost:8000/health/ready || exit 1
 
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Workers scale with CPU in production (UVICORN_WORKERS=2 default);
+# local dev overrides the command with --reload --workers 1.
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}"]

@@ -1,0 +1,74 @@
+# Production parity compose — Neon Postgres + R2/S3, no local DB file.
+#
+# Usage:
+#   export DATABASE_URL="postgresql://user:pass@host/db?sslmode=require"
+#   export SECRET_KEY="$(python -c 'import secrets;print(secrets.token_hex(32))')"
+#   export OPENROUTER_API_KEY="sk-or-v1-..." S3_BUCKET="..." [...]   # as needed
+#   docker compose -f docker/compose.prod.yml up --build -d
+#
+# Differences from docker-compose.yml (local dev):
+#   - no `../data:/app/data` DB mount (state lives in Neon + R2/S3)
+#   - no `env_file` (12-factor env; keeps secrets out of images/files)
+#   - persistent HF model cache volume (no re-download on restart)
+#   - UVICORN_WORKERS + ENABLE_DOCS=false by default
+#   - readiness gate is a real 503 now ( Phase 3), so depends_on is reliable
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: rag-backend-prod
+    environment:
+      DEBUG: "false"
+      ENABLE_DOCS: "false"
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to your Neon URL}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY to 32+ random bytes}
+      API_KEY: ${API_KEY:?set API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-inclusionai/ling-3.0-flash-fin:free}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-openrouter/free}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS to your dashboard origin}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your API base URL}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-auto}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-xvecbot}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_REGION: ${S3_REGION:-auto}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      HF_HOME: /app/.hf-cache
+    volumes:
+      - hf-cache:/app/.hf-cache
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your API base URL}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-XvecBot}
+        NEXT_PUBLIC_SITE_URL: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS to your dashboard origin}
+    container_name: xvecbot-dashboard-prod
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  hf-cache:
