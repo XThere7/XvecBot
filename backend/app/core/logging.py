@@ -11,7 +11,11 @@ from .config import settings
 
 def setup_logging() -> None:
     """Configure structlog + stdlib logging. Call once at app startup."""
-    log_level = logging.DEBUG if settings.debug else logging.INFO
+    override = (settings.log_level or "").strip().upper()
+    if override in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        log_level = getattr(logging, override)
+    else:
+        log_level = logging.DEBUG if settings.debug else logging.INFO
 
     shared_processors: list = [
         structlog.contextvars.merge_contextvars,

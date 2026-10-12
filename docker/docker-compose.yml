@@ -4,6 +4,11 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.backend
     container_name: rag-backend
+    # Run as the host user so bind-mounted ../data files keep their owner.
+    # Without this the container runs as root and host files (e.g.
+    # data/rag.db) become root-owned on first write. Export UID/GID or rely
+    # on the 1000:1000 default (matches the image's appuser).
+    user: "${UID:-1000}:${GID:-1000}"
     env_file: ../.env
     volumes:
       - ../data:/app/data        # Persist uploads + DB across restarts

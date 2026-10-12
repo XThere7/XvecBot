@@ -25,6 +25,7 @@ from .core.config import settings
 from .core.database import init_db
 from .core.logging import get_logger, setup_logging
 from .core.middleware import PublicSurfaceMiddleware
+from .core.rate_limit import RateLimitMiddleware
 
 # Initialise structured logging first
 setup_logging()
@@ -111,6 +112,14 @@ def create_app() -> FastAPI:
     # Registered last => outermost (Starlette inserts at index 0), so this layer
     # answers /public/* preflights before CORSMiddleware can reject them.
     app.add_middleware(PublicSurfaceMiddleware)
+    # Outermost of all: reject abusive traffic before any other work.
+    # Env-gated (RATE_LIMIT_ENABLED, default off) and scoped to /auth/* +
+    # /public/*, so local dev, tests, and dashboard routes never notice it.
+    app.add_middleware(
+        RateLimitMiddleware,
+        enabled=settings.rate_limit_enabled,
+        per_minute=settings.rate_limit_per_minute,
+    )
 
     # ── Routers ───────────────────────────────────────────────────────────────
     app.include_router(health.router)

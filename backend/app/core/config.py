@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # Serve /docs + /redoc. Default True for local dev; production sets
     # ENABLE_DOCS=false (BEARER tokens in docs "Authorize" are a leak vector).
     enable_docs: bool = True
+    # Abuse mitigation (Phase 4). Off locally so dev/tests are never throttled;
+    # prod compose sets RATE_LIMIT_ENABLED=true. Scoped to /auth/* + /public/*.
+    rate_limit_enabled: bool = False
+    rate_limit_per_minute: int = 60
+    # Log verbosity override ("DEBUG"/"INFO"/"WARNING"/"ERROR"). Empty means
+    # derived from DEBUG (DEBUG=true → DEBUG else INFO).
+    log_level: str = ""
 
     INSECURE_SECRET_DEFAULTS: ClassVar[tuple] = ("change-this-in-production", "", "dev-key")
 
