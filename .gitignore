@@ -42,6 +42,10 @@ node_modules/
 BaseBot_UI/.next/
 frontendbot.md
 PHASE2&3.MD
+phase2.md
+phase3.md
+phase4.md
+phase5.md
 README.md
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
@@ -49,9 +53,7 @@ README.md
 # ── OS junk ──────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-.env
-.env
 
 # Generated widget production build (run: python backend/scripts/build_widget.py)
 backend/app/static/widget.min.js
-data/rag.dbo
+data/rag.db
