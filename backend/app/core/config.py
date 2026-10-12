@@ -5,6 +5,7 @@ All other modules import `settings` from here — never read os.environ directly
 """
 from functools import lru_cache
 from pathlib import Path
+from typing import ClassVar
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve project root reliably regardless of cwd (backend/app/core -> project root)
@@ -46,6 +47,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-this-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_DAYS: int = 7
+    # Serve /docs + /redoc. Default True for local dev; production sets
+    # ENABLE_DOCS=false (BEARER tokens in docs "Authorize" are a leak vector).
+    enable_docs: bool = True
+
+    INSECURE_SECRET_DEFAULTS: ClassVar[tuple] = ("change-this-in-production", "", "dev-key")
+
+    def secrets_are_default(self) -> bool:
+        """True when SECRET_KEY is still an insecure placeholder."""
+        return (self.SECRET_KEY or "").strip() in self.INSECURE_SECRET_DEFAULTS
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./data/rag.db"

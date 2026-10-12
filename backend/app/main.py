@@ -43,6 +43,16 @@ async def lifespan(app: FastAPI):
     """
     log.info("Starting up", app=settings.app_name, version=settings.app_version)
 
+    # Fail fast on insecure secrets in non-debug mode. Local dev (DEBUG=true)
+    # keeps the placeholder so first-run stays frictionless; production with
+    # DEBUG=false and a default SECRET_KEY refuses to boot rather than
+    # signing JWTs with a public value.
+    if not settings.debug and settings.secrets_are_default():
+        raise RuntimeError(
+            "Refusing to start: SECRET_KEY is still the insecure default. "
+            "Set a 32+ byte SECRET_KEY env var (DEBUG=false requires it)."
+        )
+
     # Create DB tables + load sqlite-vec extension
     await init_db()
 
@@ -73,8 +83,10 @@ def create_app() -> FastAPI:
         ),
         version=settings.app_version,
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        # Hidden in production (ENABLE_DOCS=false) — interactive docs with
+        # an Authorize button are a token-phishing surface on public hosts.
+        docs_url="/docs" if settings.enable_docs else None,
+        redoc_url="/redoc" if settings.enable_docs else None,
     )
 
     # ── Middleware ────────────────────────────────────────────────────────────

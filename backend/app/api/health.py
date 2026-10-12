@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 
 from ..core.config import settings
 from ..core.database import get_db
@@ -33,8 +34,11 @@ async def health():
 @router.get("/health/ready", summary="Readiness check including DB")
 async def readiness():
     """
-    Returns 200 only if the database is reachable.
-    Use this as the Kubernetes readinessProbe or Docker HEALTHCHECK.
+    Returns 200 only if the database is reachable, else 503.
+    Use this as the Kubernetes readinessProbe or Docker HEALTHCHECK —
+    orchestrators only route traffic after a 200 (previously this always
+    returned 200 with the failure buried in the body, so unhealthy
+    replicas kept receiving traffic).
     """
     db_ok = False
     try:
@@ -45,9 +49,11 @@ async def readiness():
     except Exception as exc:
         log.error("Readiness DB check failed", error=str(exc))
 
-    status = "ready" if db_ok else "not_ready"
-    return {
-        "status": status,
+    body = {
+        "status": "ready" if db_ok else "not_ready",
         "database": "ok" if db_ok else "error",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if db_ok:
+        return body
+    return JSONResponse(status_code=503, content=body)
