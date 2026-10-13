@@ -44,6 +44,8 @@ export interface Agent {
   description: string | null;
   system_prompt: string;
   welcome_message: string | null;
+  /** Same-server icon path (e.g. /static/icons/…) or null = default bubble. */
+  icon_url: string | null;
   model: string;
   temperature: number;
   language: string;

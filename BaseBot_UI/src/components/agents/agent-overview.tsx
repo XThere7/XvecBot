@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Pencil } from "lucide-react";
 import { AgentForm } from "@/components/agents/agent-form";
+import { AgentIconUpload } from "@/components/agents/agent-icon-upload";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DefinitionList } from "@/components/ui/definition-list";
@@ -56,6 +57,7 @@ export function AgentOverview({ wsId, agentId }: { wsId: string; agentId: string
           submitLabel="Save agent"
           onSaved={() => setEditing(false)}
         />
+        <AgentIconUpload wsId={wsId} agentId={agentId} />
       </div>
     );
   }
@@ -129,6 +131,8 @@ export function AgentOverview({ wsId, agentId }: { wsId: string; agentId: string
           ]}
         />
       </section>
+
+      <AgentIconUpload wsId={wsId} agentId={agentId} />
     </div>
   );
 }

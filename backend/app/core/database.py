@@ -157,7 +157,8 @@ CREATE TABLE IF NOT EXISTS agents (
     is_active     INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
-    welcome_message TEXT
+    welcome_message TEXT,
+    icon_url      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(workspace_id, is_active);
@@ -193,8 +194,10 @@ AGENT_CONVERSATION_COLUMNS = {
 
 # `agents` predates the Phase 4 widget, so the same CREATE TABLE IF NOT EXISTS
 # is a no-op there too — the welcome_message column is appended instead.
+# icon_url (bot avatar, Phase 5-hardening) follows the same additive path.
 AGENT_TABLE_COLUMNS = {
     "welcome_message": "TEXT",
+    "icon_url": "TEXT",
 }
 
 # An earlier revision of this change added a duplicate `messages.sources`

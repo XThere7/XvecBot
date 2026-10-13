@@ -140,6 +140,17 @@ def create_app() -> FastAPI:
     # happens to be backend/, and StaticFiles raises at startup if it is missing.
     # The same directory is also mounted under /static/widget.js, which is the
     # path the Phase 4 integration test and several CDNs expect.
+    # ── Bot icons ─────────────────────────────────────────────────────────────
+    # Agent avatars uploaded via POST .../agents/{id}/icon live under the
+    # workspace upload root and are served at /static/icons/<agent>/<file> so
+    # the widget (any customer domain) can load them as <img> URLs. The dir is
+    # created here so the mount never fails on a fresh deploy. Mounted BEFORE
+    # the generic /static mount below — Starlette matches in order and /static
+    # would otherwise swallow /static/icons/* and 404 against widget.js's dir.
+    icons_dir = settings.workspace_upload_path / "icons"
+    icons_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static/icons", StaticFiles(directory=str(icons_dir), html=False), name="icons")
+
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir():
         app.mount("/static", StaticFiles(directory=str(static_dir), html=False), name="static")
