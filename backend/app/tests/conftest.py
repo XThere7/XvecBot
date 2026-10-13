@@ -14,7 +14,7 @@ import os
 import tempfile
 
 # ── Must run before `from ..main import app` (settings freeze at import) ──
-_TEST_DIR = tempfile.mkdtemp(prefix="xvec-test-")
+_TEST_DIR = tempfile.mkdtemp(prefix="botbase-test-")
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DIR}/test_rag.db"
 os.environ["UPLOAD_DIR"] = os.path.join(_TEST_DIR, "uploads")
 

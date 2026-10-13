@@ -30,7 +30,7 @@ SOURCE = STATIC_DIR / "widget.js"
 BUNDLE = STATIC_DIR / "widget.min.js"
 
 BANNER = (
-    "/*! XvecBot widget - production build. Generated from widget.js by "
+    "/*! BotBase widget - production build. Generated from widget.js by "
     "scripts/build_widget.py. Do not edit; edit the source instead. */\n"
 )
 
@@ -87,7 +87,7 @@ def report(minified: bytes) -> None:
     pct = (1 - len(minified) / len(src)) * 100
     gz_pct = (1 - min_gz / src_gz) * 100
     kb = lambda n: f"{n / 1024:.2f} KiB"
-    print("XvecBot widget build")
+    print("BotBase widget build")
     print(f"  source      {BUNDLE.parent.name}/widget.js       {len(src):>7,} B  {kb(len(src)):>11}  gzip {kb(src_gz)}")
     print(f"  minified    {BUNDLE.name:<21}{len(minified):>7,} B  {kb(len(minified)):>11}  gzip {kb(min_gz)}")
     print(f"  saved       {'':24}{len(src) - len(minified):>7,} B  {pct:>10.1f}%  gzip {gz_pct:>9.1f}%")

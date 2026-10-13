@@ -1,5 +1,5 @@
 /**
- * End-to-end smoke test for the XvecBot dashboard.
+ * End-to-end smoke test for the BotBase dashboard.
  *
  * Drives the real UI in Chromium against the mock backend in ./mock-api.mjs and
  * asserts the mandatory UX rules from frontendbot.md: the training poll, the
@@ -82,7 +82,7 @@ try {
   check("register redirects to dashboard", page.url().endsWith("/dashboard"));
 
   // ---- dashboard onboarding ----
-  await page.getByRole("heading", { name: "Welcome to XvecBot" }).waitFor({ timeout: 10000 });
+  await page.getByRole("heading", { name: "Welcome to BotBase" }).waitFor({ timeout: 10000 });
   check("onboarding checklist shown for a new account", true);
   check(
     "onboarding shows all three steps",

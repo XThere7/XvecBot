@@ -38,7 +38,7 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
             <Sparkles aria-hidden className="h-3 w-3" />
             Getting started
           </span>
-          <h2 className="mt-4 text-2xl text-primary">Welcome to XvecBot</h2>
+          <h2 className="mt-4 text-2xl text-primary">Welcome to BotBase</h2>
           <p className="mt-2 text-sm leading-5 text-secondary">
             Three steps to your first live chat widget. Progress comes from your
             real data — nothing here is stored in the browser.

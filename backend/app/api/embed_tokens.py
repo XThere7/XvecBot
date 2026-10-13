@@ -148,7 +148,7 @@ def _build_snippet(token: str) -> str:
     """Ready-to-paste HTML snippet for embedding the widget."""
     base = settings.app_public_url.rstrip("/")
     return (
-        "<!-- XvecBot chat widget -->\n"
+        "<!-- BotBase chat widget -->\n"
         f'<script src="{base}/{_widget_js_path()}"\n'
         f'        data-agent="{token}"\n'
         f'        data-position="right"\n'

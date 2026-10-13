@@ -13,7 +13,7 @@ const STEPS = [
   },
   {
     title: "Train",
-    body: "XvecBot reads and indexes your documents. No AI expertise needed.",
+    body: "BotBase reads and indexes your documents. No AI expertise needed.",
   },
   {
     title: "Embed",

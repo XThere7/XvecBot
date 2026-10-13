@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
 
     # ── Application ──────────────────────────────────────────────────────────
-    app_name: str = "XvecBot"
+    app_name: str = "BotBase"
     app_version: str = "1.0.0"
     debug: bool = False
     app_public_url: str = "https://yourplatform.com"
@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     # through FastAPI; the legacy UploadFile endpoints keep working unchanged.
     storage_backend: str = "auto"  # auto | local | s3
     s3_bucket: str = ""
-    s3_prefix: str = "xvecbot"
+    s3_prefix: str = "botbase"
     s3_endpoint_url: str = ""  # R2: https://<accountid>.r2.cloudflarestorage.com
     s3_region: str = "auto"
     aws_access_key_id: str = ""

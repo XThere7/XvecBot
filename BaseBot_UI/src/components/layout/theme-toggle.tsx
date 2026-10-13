@@ -4,7 +4,7 @@ import * as React from "react";
 import { Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-export const THEME_STORAGE_KEY = "xvecbot-theme";
+export const THEME_STORAGE_KEY = "botbase-theme";
 export type Theme = "dark" | "light";
 
 export function getStoredTheme(): Theme {

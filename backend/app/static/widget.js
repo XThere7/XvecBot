@@ -1,14 +1,14 @@
-/* XvecBot embeddable chat widget (Phase 4) — vanilla JS, no dependencies.
+/* BotBase embeddable chat widget (Phase 4) — vanilla JS, no dependencies.
  * <script src="https://yourplatform.com/widget.js" data-agent="<EMBED_TOKEN>" async></script>
  * Optional: data-position="right|left" data-color="#hex" data-lang="English".
- * Global: window.XvecBotWidget = { open, close, destroy } */
+ * Global: window.BotBaseWidget = { open, close, destroy } */
 (function () {
 'use strict';
 
 var tag = document.currentScript || document.querySelector('script[data-agent]');
-if (!tag) { console.warn('[XvecBot] No script tag found'); return; }
+if (!tag) { console.warn('[BotBase] No script tag found'); return; }
 var TOKEN = (tag.getAttribute('data-agent') || '').trim();
-if (!TOKEN) { console.warn('[XvecBot] data-agent is required'); return; }
+if (!TOKEN) { console.warn('[BotBase] data-agent is required'); return; }
 
 // The API lives on the same origin the widget was served from.
 var API_BASE;
@@ -21,8 +21,8 @@ var COLOR = (tag.getAttribute('data-color') || '').trim();
 if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(COLOR)) COLOR = '#6366f1';
 
 // One bubble per page. A second script tag replaces the first.
-if (window.XvecBotWidget && window.XvecBotWidget.destroy) {
-  try { window.XvecBotWidget.destroy(); } catch (e) {}
+if (window.BotBaseWidget && window.BotBaseWidget.destroy) {
+  try { window.BotBaseWidget.destroy(); } catch (e) {}
 }
 
 var CSS = '' +
@@ -82,7 +82,7 @@ var CSS = '' +
 
 // Shadow DOM keeps these styles off the host page.
 var host = document.createElement('div');
-host.id = 'xvecbot-' + Math.random().toString(36).slice(2, 9);
+host.id = 'botbase-' + Math.random().toString(36).slice(2, 9);
 host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0';
 
 var A = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
@@ -98,7 +98,7 @@ root.innerHTML = '<style>' + CSS + '</style><div class="r" data-pos="' + POS + '
 'aria-label="Message"></textarea>' +
 '<button class="o" type="submit" aria-label="Send"><svg ' + A + ' width="18" height="18">' +
 '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button></form>' +
-'<a class="a" href="' + API_BASE + '" target="_blank" rel="noopener nofollow">Powered by XvecBot</a>' +
+'<a class="a" href="' + API_BASE + '" target="_blank" rel="noopener nofollow">Powered by BotBase</a>' +
 '</section>' +
 '<button class="z" type="button" aria-label="Open chat" aria-expanded="false">' +
 '<svg class="c1" ' + A + '><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 1.2 4.4L3 21l4.7-1.1A9 9 0 1 0 12 3Z"/></svg>' +
@@ -113,7 +113,7 @@ var wrap = $('.r'), panel = $('.p'), log = $('.l'), form = $('.f'), input = $('.
 
 // ── Session state ──
 var DEFAULT_WELCOME = 'Hi! How can I help you today?';
-var STORE_KEY = 'xvecbot_conv_' + TOKEN;
+var STORE_KEY = 'botbase_conv_' + TOKEN;
 var messages = [], conversationId = null, info = null,
     inFlight = false, isOpen = false, greeted = false, dead = false, abort = null;
 
@@ -331,5 +331,5 @@ closeBtn.addEventListener('click', close);
 newBtn.addEventListener('click', newChat);
 document.addEventListener('keydown', onKey);
 
-window.XvecBotWidget = { open: open, close: close, destroy: destroy };
+window.BotBaseWidget = { open: open, close: close, destroy: destroy };
 })();

@@ -65,7 +65,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("xvecbot-theme");if(t==="light"){document.documentElement.dataset.theme="light";}}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("botbase-theme");if(t==="light"){document.documentElement.dataset.theme="light";}}catch(e){}})();`,
           }}
         />
       </head>

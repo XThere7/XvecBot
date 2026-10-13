@@ -1,9 +1,9 @@
-# XvecBot — Phase 2 & 3 Integration Test Record
+# BotBase — Phase 2 & 3 Integration Test Record
 
 **Tester:** QA Agent
 **Date:** 2026-09-28
 **Server:** http://127.0.0.1:8000
-**Test Identity:** email `qa.tester@xvecbot.com`, password `QaTest1234!`
+**Test Identity:** email `qa.tester@botbase.com`, password `QaTest1234!`
 
 Results are appended immediately after each test completes.
 
@@ -18,7 +18,7 @@ Results are appended immediately after each test completes.
 - **Result:** PASS
 
 ### T2.2 Register
-- **Request:** `POST /auth/register` body `{"email":"qa.tester@xvecbot.com","password":"QaTest1234!"}`
+- **Request:** `POST /auth/register` body `{"email":"qa.tester@botbase.com","password":"QaTest1234!"}`
 - **Expected:** 201, access_token + user_id
 - **Response:** `{"access_token":"eyJhbGciOiJIUzI1NiIs...exp:1791237195...","token_type":"bearer","user_id":"5f9ad10a-7865-4281-9ac4-2abf3eafad4e"}` — HTTP 201
 - **Result:** PASS
@@ -30,13 +30,13 @@ Results are appended immediately after each test completes.
 - **Result:** PASS
 
 ### T2.4 Login success
-- **Request:** `POST /auth/login` body `{"email":"qa.tester@xvecbot.com","password":"QaTest1234!"}`
+- **Request:** `POST /auth/login` body `{"email":"qa.tester@botbase.com","password":"QaTest1234!"}`
 - **Expected:** 200, access_token
 - **Response:** `{"access_token":"eyJhbGciOiJIUzI1NiIs...","token_type":"bearer","user_id":"5f9ad10a-..."}` — HTTP 200
 - **Result:** PASS
 
 ### T2.5 Login wrong password
-- **Request:** `POST /auth/login` body `{"email":"qa.tester@xvecbot.com","password":"wrongpass1"}`
+- **Request:** `POST /auth/login` body `{"email":"qa.tester@botbase.com","password":"wrongpass1"}`
 - **Expected:** 401 "Invalid credentials"
 - **Response:** `{"detail":"Invalid credentials"}` — HTTP 401
 - **Result:** PASS
@@ -203,7 +203,7 @@ Results are appended immediately after each test completes.
 - **Response:** HTTP 204; `GET .../agents/e44f9b63-...` → 404; list → count 1 `['Support Agent']`
 - **Result:** PASS
 
-### T3.15 Multi-tenant isolation (second user `qa.attacker@xvecbot.com`)
+### T3.15 Multi-tenant isolation (second user `qa.attacker@botbase.com`)
 - **Requests (all as attacker against victim workspace `8b4c48d9-...`):**
   - `GET /workspaces/8b4c48d9-.../agents` → **403**
   - `GET /workspaces/8b4c48d9-.../agents/21e29af1-...` → **403**

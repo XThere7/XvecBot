@@ -1,5 +1,5 @@
 /**
- * Minimal in-memory mock of the XvecBot backend, matching the verified shapes in
+ * Minimal in-memory mock of the BotBase backend, matching the verified shapes in
  * frontendbot.md Appendix A. Used only for local smoke testing of the dashboard.
  *
  *   node mock-api.mjs [port]
@@ -368,7 +368,7 @@ const server = createServer(async (req, res) => {
 
     if (parts[4] === "tokens") {
       const snippetFor = (token) =>
-        `<!-- XvecBot chat widget -->\n<script src="http://localhost:${PORT}/widget.min.js"\n        data-agent="${token}"\n        data-position="right"\n        data-color="#6366f1"\n        async></script>`;
+        `<!-- BotBase chat widget -->\n<script src="http://localhost:${PORT}/widget.min.js"\n        data-agent="${token}"\n        data-position="right"\n        data-color="#6366f1"\n        async></script>`;
 
       if (parts.length === 5 && method === "GET") {
         // The API masks the token on list: first 8 characters + "…" (11 chars).

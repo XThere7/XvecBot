@@ -30,8 +30,8 @@ def test_content_type_mapping():
 
 
 def test_build_object_key_no_traversal():
-    key = build_object_key("ws1", "doc1", "../../etc/passwd", "xvecbot")
-    assert key == "xvecbot/workspaces/ws1/doc1_passwd"
+    key = build_object_key("ws1", "doc1", "../../etc/passwd", "botbase")
+    assert key == "botbase/workspaces/ws1/doc1_passwd"
     assert ".." not in key
     assert not key.startswith("/")
 
