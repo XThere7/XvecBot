@@ -55,6 +55,7 @@ export const agentSchemaApi = z.object({
   description: z.string().nullable(),
   system_prompt: z.string(),
   welcome_message: z.string().nullable(),
+  icon_url: z.string().nullable(),
   model: z.string(),
   temperature: z.number(),
   language: z.string(),

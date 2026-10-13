@@ -42,6 +42,9 @@ class Agent(BaseModel):
     language: str = "English"
     is_active: bool = True
     welcome_message: Optional[str] = None
+    # Relative icon path (e.g. /static/icons/<agent_id>/<file>), NULL = default.
+    # Write-only via the dedicated icon endpoints — never via AgentUpdate.
+    icon_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -86,6 +89,7 @@ class AgentRead(BaseModel):
     language: str
     is_active: bool
     welcome_message: Optional[str] = None
+    icon_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -150,7 +154,9 @@ CREATE TABLE IF NOT EXISTS agents (
     language      TEXT NOT NULL DEFAULT 'English',
     is_active     INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
+    updated_at    TEXT NOT NULL,
+    welcome_message TEXT,
+    icon_url      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_agents_active     ON agents(workspace_id, is_active);

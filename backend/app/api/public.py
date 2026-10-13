@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from ..core.database import get_db
+from ..core.config import settings
 from ..core.logging import get_logger
 from ..models.embed_token import PublicAgentInfo
 from ..services import embed_service
@@ -130,6 +131,14 @@ async def public_agent_info(
 ):
     async with get_db() as db:
         agent = await embed_service.resolve_token(db, token)
+    # icon_url is stored as a same-server path (/static/icons/…); the widget
+    # runs on another origin, so hand it an absolute URL. Never expose a
+    # filesystem path — stored values are validated to the /static/icons/
+    # prefix at upload time, anything else is treated as absent.
+    stored_icon = agent.get("icon_url") or ""
+    icon_url = None
+    if stored_icon.startswith("/static/icons/"):
+        icon_url = settings.app_public_url.rstrip("/") + stored_icon
     return PublicAgentInfo(
         name=agent["name"],
         description=agent.get("description"),
@@ -137,4 +146,5 @@ async def public_agent_info(
         welcome_message=(
             (agent.get("welcome_message") or "").strip() or DEFAULT_WELCOME_MESSAGE
         ),
+        icon_url=icon_url,
     )

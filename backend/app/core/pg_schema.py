@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS agents (
     is_active     INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
-    welcome_message TEXT
+    welcome_message TEXT,
+    icon_url      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(workspace_id, is_active);
@@ -157,7 +158,7 @@ PG_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "title": "TEXT",
         "updated_at": "TEXT NOT NULL DEFAULT ''",
     },
-    "agents": {"welcome_message": "TEXT"},
+    "agents": {"welcome_message": "TEXT", "icon_url": "TEXT"},
     "chunks": {"workspace_id": "TEXT", "doc_id": "TEXT"},
     "chunk_embeddings": {"workspace_id": "TEXT", "doc_id": "TEXT"},
     "workspace_documents": {

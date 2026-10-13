@@ -108,7 +108,8 @@ root.innerHTML = '<style>' + CSS + '</style><div class="r" data-pos="' + POS + '
 var $ = function (q) { return root.querySelector(q); };
 var wrap = $('.r'), panel = $('.p'), log = $('.l'), form = $('.f'), input = $('.i'), send = $('.o'),
     bubble = $('.z'), badge = $('.bd'), nameEl = $('.n'), langEl = $('.g'),
-    closeBtn = $('.x'), newBtn = $('.w1');
+    closeBtn = $('.x'), newBtn = $('.w1'),
+    iconSvg = bubble.querySelector('.c1');
 (document.body || document.documentElement).appendChild(host);
 
 // ── Session state ──
@@ -184,6 +185,26 @@ function startTyping() {
 }
 
 function dropTyping(el) { if (el && el.parentNode) el.parentNode.removeChild(el); }
+
+/* Bot icon — the owner may upload a custom avatar per agent. The default SVG
+   stays visible until the agent-info response arrives; only then, and only
+   when icon_url is present, the SVG is swapped for an <img>. Any image
+   failure falls back silently to the default SVG. */
+function applyIcon(url) {
+  if (!url || typeof url !== 'string') return;
+  if (bubble.querySelector('img[data-icon]')) return;  // already applied
+  var img = document.createElement('img');
+  img.setAttribute('data-icon', '1');
+  img.src = url;
+  img.alt = 'Chat';
+  img.style.cssText = 'width:60%;height:60%;object-fit:cover;border-radius:50%';
+  img.onerror = function () {
+    try { bubble.removeChild(img); } catch (e) {}
+    if (iconSvg) iconSvg.style.display = '';
+  };
+  if (iconSvg) iconSvg.style.display = 'none';
+  bubble.insertBefore(img, bubble.firstChild);
+}
 
 /* Part A — the owner's welcome_message, shown once as the first (visual-only)
    bubble. It is never pushed to `messages`, so it is not a conversation turn
@@ -320,6 +341,7 @@ fetch(API_BASE + '/public/agent/' + encodeURIComponent(TOKEN))
     if (d.name) nameEl.textContent = d.name;
     var lang = LANG || d.language || '';
     if (lang) { langEl.textContent = lang; langEl.hidden = false; }
+    applyIcon(d.icon_url);
   })
   .catch(function () {});
 

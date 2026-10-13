@@ -36,22 +36,19 @@ async def _require_owned_workspace(
     owner_id: str,
 ) -> dict:
     """
-    Return the workspace as a dict, or raise:
-      404 if it does not exist, 403 if it belongs to someone else.
+    Return the workspace as a dict, or raise 404.
+
+    Both missing and foreign workspaces are 404 (never 403) — the
+    platform-wide convention so existence is never revealed to non-owners.
     """
     async with db.execute(
         "SELECT * FROM workspaces WHERE id = ?", (workspace_id,)
     ) as cur:
         row = await cur.fetchone()
-    if row is None:
+    if row is None or row["owner_id"] != owner_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workspace not found",
-        )
-    if row["owner_id"] != owner_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not own this workspace",
         )
     return dict(row)
 
@@ -85,7 +82,7 @@ async def create_agent(
     """
     Create an agent inside a workspace.
 
-    Raises 404 if the workspace is missing, 403 if it is not owned by owner_id.
+    Raises 404 if the workspace is missing or not owned by owner_id.
     Returns the full agent dict.
     """
     await _require_owned_workspace(db, workspace_id, owner_id)
@@ -164,7 +161,7 @@ async def get_agent(
     """
     Return a single agent.
 
-    Raises 404 if the agent is missing, 403 if its workspace is not owned.
+    Raises 404 if the agent is missing or its workspace is not owned.
     """
     agent = await _get_agent_row(db, agent_id)
     await _require_owned_workspace(db, agent["workspace_id"], owner_id)
@@ -181,7 +178,7 @@ async def update_agent(
     Partially update an agent — only fields explicitly provided are changed,
     and `updated_at` is always refreshed.
 
-    Raises 404 if the agent is missing, 403 if its workspace is not owned.
+    Raises 404 if the agent is missing or its workspace is not owned.
     Returns the updated agent dict.
     """
     agent = await _get_agent_row(db, agent_id)
@@ -251,7 +248,7 @@ async def delete_agent(
     Delete an agent and everything hanging off it:
     its conversations' messages, then the conversations, then the agent row.
 
-    Raises 404 if the agent is missing, 403 if its workspace is not owned.
+    Raises 404 if the agent is missing or its workspace is not owned.
     """
     agent = await _get_agent_row(db, agent_id)
     await _require_owned_workspace(db, agent["workspace_id"], owner_id)

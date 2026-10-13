@@ -76,3 +76,6 @@ class PublicAgentInfo(BaseModel):
     # Always resolved to a non-empty string so the widget never renders a blank
     # first message when the owner has not configured one.
     welcome_message: str
+    # Absolute icon URL, or None when the owner uploaded nothing (widget keeps
+    # its default SVG). Never a filesystem path — see public.py.
+    icon_url: Optional[str] = None

@@ -4,11 +4,15 @@ Agent CRUD and conversation history — thin routing layer.
 All logic lives in services/agent_service.py and services/conversation_service.py.
 Every route is scoped to the authenticated owner of the workspace.
 """
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
+from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
 from ..models.agent import AgentCreate, AgentUpdate
@@ -17,6 +21,42 @@ from .deps import get_current_user
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/workspaces", tags=["Agents"])
+
+# ── Bot icon upload ───────────────────────────────────────────────────────────
+# PNG/JPG/WebP/GIF only, 2 MB max. Magic bytes are checked so a renamed
+# document cannot be stored (and later served) as an image.
+ICON_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+ICON_ALLOWED_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+ICON_MAX_BYTES = 2 * 1024 * 1024
+ICON_MAGIC_PREFIXES = (
+    b"\x89PNG\r\n\x1a\n",  # PNG
+    b"\xff\xd8\xff",        # JPEG
+    b"GIF87a", b"GIF89a",  # GIF
+    b"RIFF",               # WebP (RIFF....WEBP — checked loosely, ext+MIME gate the rest)
+)
+
+
+def _icons_root() -> Path:
+    """Upload root for bot icons (same volume as workspace uploads)."""
+    root = settings.workspace_upload_path / "icons"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _icon_path_for(icon_url: Optional[str]) -> Optional[Path]:
+    """
+    Map a stored icon_url (/static/icons/<agent_id>/<file>) back to disk,
+    or None. Traversal-guarded: the resolved path must stay inside the root.
+    """
+    if not icon_url or not icon_url.startswith("/static/icons/"):
+        return None
+    rel = icon_url[len("/static/icons/"):].lstrip("/")
+    candidate = (_icons_root() / rel).resolve()
+    try:
+        candidate.relative_to(_icons_root().resolve())
+    except ValueError:
+        return None
+    return candidate
 
 
 @router.post(
@@ -126,6 +166,28 @@ async def _require_owned_agent(
     return agent
 
 
+async def _require_owned_conversation(
+    db,
+    agent_id: str,
+    conversation_id: str,
+) -> dict:
+    """
+    Multi-tenancy binding (Task 1 audit fix): a conversation id is only valid
+    inside the agent it was created for. Without this check, any authenticated
+    user holding their OWN agent id could read or delete ANY conversation in
+    the database — including other users' — by guessing its UUID in the path.
+    chat_with_agent() already enforced this (foreign id → 404); the GET and
+    DELETE endpoints did not. Legacy agent_id-NULL rows are never exposed here.
+    """
+    conversation = await conversation_service.get_conversation(db, conversation_id)
+    if conversation is None or conversation.get("agent_id") != agent_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+    return conversation
+
+
 @router.get(
     "/{workspace_id}/agents/{agent_id}/conversations",
     summary="List conversations for an agent",
@@ -152,14 +214,9 @@ async def get_conversation(
 ):
     async with get_db() as db:
         await _require_owned_agent(db, workspace_id, agent_id, user)
-        conversation = await conversation_service.get_conversation(
-            db, conversation_id
+        conversation = await _require_owned_conversation(
+            db, agent_id, conversation_id
         )
-        if conversation is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found",
-            )
         messages = await conversation_service.get_conversation_messages(
             db, conversation_id
         )
@@ -179,6 +236,7 @@ async def delete_conversation(
 ):
     async with get_db() as db:
         await _require_owned_agent(db, workspace_id, agent_id, user)
+        await _require_owned_conversation(db, agent_id, conversation_id)
         await conversation_service.delete_conversation(db, conversation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -233,3 +291,110 @@ async def new_conversation(
     async with get_db() as db:
         await _require_owned_agent(db, workspace_id, agent_id, user)
         return await conversation_service.create_conversation(db, agent_id)
+
+
+# ── Bot icon ──────────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{workspace_id}/agents/{agent_id}/icon",
+    summary="Upload a bot icon (avatar) for an agent",
+)
+async def upload_icon(
+    workspace_id: str,
+    agent_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Set the agent's chat-bubble icon. Ownership chain verified
+    (agent → workspace → owner) before anything is written.
+    """
+    async with get_db() as db:
+        agent = await _require_owned_agent(db, workspace_id, agent_id, user)
+
+        original = Path(file.filename or "").name
+        ext = Path(original).suffix.lower()
+        if ext not in ICON_ALLOWED_EXTENSIONS or (
+            file.content_type not in ICON_ALLOWED_MIME_TYPES
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only PNG, JPG, WebP, and GIF images are allowed.",
+            )
+
+        content = await file.read()
+        if len(content) > ICON_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Image must be under 2 MB.",
+            )
+        if not content.startswith(ICON_MAGIC_PREFIXES):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only PNG, JPG, WebP, and GIF images are allowed.",
+            )
+
+        dest_dir = _icons_root() / agent_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{uuid.uuid4().hex}_{original}"
+        save_path = dest_dir / filename
+        save_path.write_bytes(content)
+        icon_url = f"/static/icons/{agent_id}/{filename}"
+
+        # Remove the previous icon so orphan files never accumulate.
+        old_path = _icon_path_for(agent.get("icon_url"))
+        if old_path is not None and old_path != save_path:
+            try:
+                old_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        try:
+            await db.execute(
+                "UPDATE agents SET icon_url = ?, updated_at = ? WHERE id = ?",
+                (
+                    icon_url,
+                    datetime.now(timezone.utc).isoformat(),
+                    agent_id,
+                ),
+            )
+            await db.commit()
+            updated = await agent_service.get_agent(db, agent_id, user["id"])
+        except Exception:
+            save_path.unlink(missing_ok=True)
+            raise
+
+    log.info("Agent icon uploaded", agent_id=agent_id, icon_url=icon_url)
+    return updated
+
+
+@router.delete(
+    "/{workspace_id}/agents/{agent_id}/icon",
+    summary="Remove the bot icon (falls back to the default bubble)",
+)
+async def delete_icon(
+    workspace_id: str,
+    agent_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Verify ownership, delete the file, NULL the column."""
+    async with get_db() as db:
+        agent = await _require_owned_agent(db, workspace_id, agent_id, user)
+
+        old_path = _icon_path_for(agent.get("icon_url"))
+        if old_path is not None:
+            try:
+                old_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        await db.execute(
+            "UPDATE agents SET icon_url = NULL, updated_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), agent_id),
+        )
+        await db.commit()
+        updated = await agent_service.get_agent(db, agent_id, user["id"])
+
+    log.info("Agent icon removed", agent_id=agent_id)
+    return updated
