@@ -181,6 +181,27 @@ CREATE INDEX IF NOT EXISTS idx_embed_tokens_agent ON agent_embed_tokens(agent_id
 CREATE INDEX IF NOT EXISTS idx_embed_tokens_token  ON agent_embed_tokens(token);
 """
 
+# Phase 6 — developer API keys (BotBase developer platform). Plaintext keys
+# are never stored — only the SHA-256 hash. Brand prefix is sk-botbase-.
+CREATE_DEVELOPER_API_KEYS = """
+CREATE TABLE IF NOT EXISTS developer_api_keys (
+    id             TEXT PRIMARY KEY,
+    user_id        TEXT NOT NULL REFERENCES users(id),
+    workspace_id   TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    key_hash       TEXT NOT NULL UNIQUE,
+    key_prefix     TEXT NOT NULL,
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    allowed_agents TEXT,
+    request_count  INTEGER NOT NULL DEFAULT 0,
+    last_used_at   TEXT,
+    expires_at     TEXT,
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dev_keys_workspace ON developer_api_keys(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_dev_keys_hash ON developer_api_keys(key_hash);
+"""
+
 # `conversations` already exists from Phase 1 with a narrower schema, so
 # CREATE TABLE IF NOT EXISTS against it is a silent no-op. The agent columns
 # are appended instead — additive and data-preserving.
@@ -314,6 +335,7 @@ async def init_db() -> None:
         await db.executescript(CREATE_WORKSPACE_DOCUMENTS)
         await db.executescript(CREATE_AGENTS)
         await db.executescript(CREATE_AGENT_EMBED_TOKENS)
+        await db.executescript(CREATE_DEVELOPER_API_KEYS)
         # Agent columns on the pre-existing Phase 1 conversations table (idempotent).
         await _add_columns_if_missing(db, "conversations", AGENT_CONVERSATION_COLUMNS)
         # `agents` gains the Phase 4 widget welcome_message column (idempotent).

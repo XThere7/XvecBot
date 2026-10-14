@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .api import agents, auth, documents, embed_tokens, health, public, query, upload, workspaces
+from .api import agents, api_keys, auth, developer, documents, embed_tokens, health, public, query, upload, workspaces
 from .core.config import settings
 from .core.database import init_db
 from .core.logging import get_logger, setup_logging
@@ -131,6 +131,12 @@ def create_app() -> FastAPI:
     app.include_router(embed_tokens.router)
     app.include_router(upload.router, prefix="/api/v1")
     app.include_router(query.router,  prefix="/api/v1")
+    # Phase 6 developer platform. Paths (/chat, /agents, /health) do not
+    # collide with the legacy query router (/ , /stream, /llm/status,
+    # /conversations/{id}); api_keys lives under /workspaces alongside the
+    # agents/documents/embed_tokens routers with distinct segments.
+    app.include_router(developer.router)
+    app.include_router(api_keys.router)
 
     # ── Static ───────────────────────────────────────────────────────────────
     # The embeddable widget script, served at https://<host>/widget.js so the
