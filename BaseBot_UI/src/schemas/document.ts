@@ -38,7 +38,7 @@ export function isAllowedExtension(filename: string): boolean {
   return (ALLOWED_FILE_EXTENSIONS as readonly string[]).includes(ext);
 }
 
-/** Client-side pre-flight. The upload route itself enforces no size cap. */
+/** Client-side pre-flight only. The backend enforces MAX_UPLOAD_BYTES and returns 413. */
 export function validateFile(
   file: File,
   maxSizeMb: number,

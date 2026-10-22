@@ -1,5 +1,6 @@
 import { DocumentsPanel } from "@/components/documents/documents-panel";
 import { AgentsPanel } from "@/components/agents/agents-panel";
+import { DeveloperPanel } from "@/components/developer/developer-panel";
 import { WorkspaceSettingsPanel } from "@/components/workspaces/workspace-settings-panel";
 import { WorkspaceGate } from "@/components/common/workspace-gate";
 import { TabContent } from "@/components/common/tab-nav";
@@ -25,6 +26,8 @@ export default async function WorkspacePage({
       <TabContent tabKey={tab}>
         {tab === "agents" ? (
           <AgentsPanel wsId={wsId} />
+        ) : tab === "developer" ? (
+          <DeveloperPanel wsId={wsId} />
         ) : tab === "settings" ? (
           <WorkspaceSettingsPanel wsId={wsId} />
         ) : (

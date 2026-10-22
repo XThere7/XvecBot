@@ -22,6 +22,7 @@ import { useWorkspace } from "@/hooks/use-workspaces";
 const TABS: { id: WorkspaceTab; label: string }[] = [
   { id: "documents", label: "Documents" },
   { id: "agents", label: "Agents" },
+  { id: "developer", label: "Developer" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -37,13 +38,15 @@ export function WorkspaceHeader({ wsId }: { wsId: string }) {
 
   const tabParam = searchParams.get("tab") ?? undefined;
 
-  // `/workspaces/[wsId]/agents` is the deep-link form of the Agents tab, so the
-  // header follows the route as well as the query string.
+  // `/workspaces/[wsId]/agents` and `/developer` are deep-link forms of their
+  // tabs, so the header follows the route as well as the query string.
   const currentTab: WorkspaceTab = pathname.includes("/agents")
     ? "agents"
-    : isWorkspaceTab(tabParam)
-      ? tabParam
-      : DEFAULT_WORKSPACE_TAB;
+    : pathname.includes("/developer")
+      ? "developer"
+      : isWorkspaceTab(tabParam)
+        ? tabParam
+        : DEFAULT_WORKSPACE_TAB;
   const documents = useDocuments(wsId);
   const agents = useAgents(wsId);
 

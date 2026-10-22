@@ -36,7 +36,12 @@ export function LoginForm({ redirectTo }: { redirectTo: string | null }) {
   });
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+    <form
+      method="post"
+      onSubmit={submit}
+      noValidate
+      className="flex flex-col gap-4"
+    >
       {formError && (
         <AlertBanner
           tone="danger"

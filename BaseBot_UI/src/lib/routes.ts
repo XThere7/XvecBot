@@ -1,4 +1,4 @@
-export type WorkspaceTab = "documents" | "agents" | "settings";
+export type WorkspaceTab = "documents" | "agents" | "developer" | "settings";
 export type AgentTab = "overview" | "test" | "conversations" | "embed";
 
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "documents";
@@ -29,7 +29,12 @@ export function conversationHref(
 }
 
 export function isWorkspaceTab(value: string | undefined): value is WorkspaceTab {
-  return value === "documents" || value === "agents" || value === "settings";
+  return (
+    value === "documents" ||
+    value === "agents" ||
+    value === "developer" ||
+    value === "settings"
+  );
 }
 
 /**

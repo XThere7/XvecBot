@@ -16,7 +16,10 @@ export const MAX_EMAIL_LENGTH = 255;
 export const MIN_PASSWORD_LENGTH = 8;
 
 export const ALLOWED_FILE_EXTENSIONS = [".pdf", ".txt", ".docx"] as const;
-/** Recommended client-side cap. The upload route itself has no server-side cap. */
+/**
+ * Client-side pre-flight only. The backend enforces MAX_UPLOAD_BYTES
+ * authoritatively and returns 413; keep this value in sync as a UX hint.
+ */
 export const MAX_FILE_SIZE_MB = 50;
 
 export const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";

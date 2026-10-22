@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { CodeSnippet } from "@/components/ui/code-snippet";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Modal } from "@/components/ui/modal";
+import { HostedLinkCard } from "./hosted-link-card";
 import { SnippetChecklist } from "./snippet-checklist";
 
 /** PREMIUM MOMENT 3 — lazily loaded glow behind this high-anxiety modal. */
@@ -26,6 +27,7 @@ export type OneTimeToken = {
   token: string;
   label: string;
   snippet: string;
+  hostedUrl: string;
 };
 
 /**
@@ -135,9 +137,21 @@ export function OneTimeTokenModal({
               </div>
             </section>
 
+            {value.hostedUrl && (
+              <section className="flex flex-col gap-2">
+                <h3 className="text-base font-medium text-primary">
+                  3. Or share the hosted page
+                </h3>
+                <HostedLinkCard
+                  hostedUrl={value.hostedUrl}
+                  token={value.token}
+                />
+              </section>
+            )}
+
             <section className="flex flex-col gap-2">
               <h3 className="text-base font-medium text-primary">
-                3. Check off each step
+                {value.hostedUrl ? "4" : "3"}. Check off each step
               </h3>
               <SnippetChecklist resetKey={value.token} />
             </section>

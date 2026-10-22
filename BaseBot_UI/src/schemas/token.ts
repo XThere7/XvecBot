@@ -37,6 +37,7 @@ export const embedTokenListSchema = z.array(embedTokenSchema);
 export const embedSnippetSchema = z.object({
   snippet: z.string(),
   token: z.string(),
+  hosted_url: z.string().url(),
 });
 
 /**

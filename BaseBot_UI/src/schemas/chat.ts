@@ -33,6 +33,20 @@ export const agentChatResponseSchema = z.object({
   model_used: z.string(),
 });
 
+export const publicAgentInfoSchema = z.object({
+  name: z.string(),
+  description: z.string().nullable(),
+  language: z.string(),
+  welcome_message: z.string(),
+  icon_url: z.string().url().nullable(),
+});
+
+export const publicChatResponseSchema = z.object({
+  answer: z.string(),
+  sources: sourcesSchema,
+  conversation_id: z.string(),
+});
+
 export const workspaceChatResponseSchema = z.object({
   answer: z.string(),
   sources: sourcesSchema,

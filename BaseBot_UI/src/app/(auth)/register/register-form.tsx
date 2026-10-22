@@ -39,7 +39,12 @@ export function RegisterForm() {
     fieldErrors.length === 0 && formError?.toLowerCase().includes("already registered");
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+    <form
+      method="post"
+      onSubmit={submit}
+      noValidate
+      className="flex flex-col gap-4"
+    >
       {formError && !duplicateEmail && (
         <AlertBanner
           tone="danger"

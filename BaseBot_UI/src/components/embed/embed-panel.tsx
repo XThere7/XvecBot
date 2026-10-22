@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KeyRound, Plus } from "lucide-react";
 import { OneTimeTokenModal, type OneTimeToken } from "./one-time-token-modal";
+import { HostedLinkCard } from "./hosted-link-card";
 import { SnippetChecklist } from "./snippet-checklist";
 import { TokenFormModal } from "./token-form-modal";
 import { TokenTable } from "./token-table";
@@ -83,15 +84,22 @@ function EmbedPanelInner({
     // 201 is the only moment the full token exists in the browser. The snippet
     // is fetched immediately so both halves are on screen at once.
     let snippet = "";
+    let hostedUrl = "";
     try {
       const response = await apiGet<EmbedSnippet>(
         `/workspaces/${wsId}/agents/${agentId}/tokens/${token.id}/snippet`,
       );
       snippet = response.snippet;
+      hostedUrl = response.hosted_url;
     } catch {
       snippet = "";
     }
-    setOneTime({ token: token.token, label: token.label, snippet });
+    setOneTime({
+      token: token.token,
+      label: token.label,
+      snippet,
+      hostedUrl,
+    });
   };
 
   const handleRevoke = async (token: EmbedToken) => {
@@ -225,6 +233,10 @@ function EmbedPanelInner({
                   {snippetQuery.data.token}
                 </code>
               </div>
+              <HostedLinkCard
+                hostedUrl={snippetQuery.data.hosted_url}
+                token={snippetQuery.data.token}
+              />
               <SnippetChecklist resetKey={snippetQuery.data.token} />
             </div>
           ) : null}

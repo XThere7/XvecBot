@@ -116,13 +116,46 @@ export interface EmbedSnippet {
   snippet: string;
   /** Full token. */
   token: string;
+  /** Shareable hosted chat page, on the configured HOSTED_BASE_URL. */
+  hosted_url: string;
 }
 
 export interface PublicAgentInfo {
   name: string;
-  description: string;
+  description: string | null;
   language: string;
   welcome_message: string;
+  /** Absolute URL, or null when the agent uses the default bubble. */
+  icon_url: string | null;
+}
+
+export interface PublicChatResponse {
+  answer: string;
+  sources: Source[];
+  conversation_id: string;
+}
+
+export interface DeveloperApiKey {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  name: string;
+  /** Masked prefix, e.g. "sk-botbase-a1b2". Never the full key. */
+  key_prefix: string;
+  /** Integer 0 | 1 from the backend. */
+  is_active: 0 | 1;
+  /** null = every agent in the workspace is allowed. */
+  allowed_agents: string[] | null;
+  request_count: number;
+  last_used_at: ISODate | null;
+  expires_at: ISODate | null;
+  created_at: ISODate;
+}
+
+export interface DeveloperApiKeyCreated extends DeveloperApiKey {
+  /** Full plaintext key — present on the 201 response only. */
+  key: string;
+  warning: string;
 }
 
 export interface TrainResponse {
