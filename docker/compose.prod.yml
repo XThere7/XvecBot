@@ -1,72 +1,173 @@
-# Production parity compose — Neon Postgres + R2/S3, no local DB file.
+# Production compose — self-contained: PostgreSQL + pgvector, the API, an
+# optional self-hosted dashboard and Caddy for TLS.
 #
-# Usage:
-#   export DATABASE_URL="postgresql://user:pass@host/db?sslmode=require"
+# Usage (on the VPS):
+#   export DATABASE_URL="postgresql://botbase:<pw>@db:5432/botbase"
+#   export POSTGRES_PASSWORD="<pw>"            # must match the password above
 #   export SECRET_KEY="$(python -c 'import secrets;print(secrets.token_hex(32))')"
-#   export OPENROUTER_API_KEY="sk-or-v1-..." S3_BUCKET="..." [...]   # as needed
-#   docker compose -f docker/compose.prod.yml up --build -d
+#   export API_KEY="$(python -c 'import secrets;print(secrets.token_hex(32))')"
+#   export API_DOMAIN="api.yourdomain.com"
+#   export APP_PUBLIC_URL="https://api.yourdomain.com"
+#   export HOSTED_BASE_URL="https://app.yourdomain.com"
+#   export ALLOWED_ORIGINS="https://app.yourdomain.com"
+#   export NEXT_PUBLIC_SITE_URL="https://app.yourdomain.com"
+#   export S3_BUCKET="botbase-prod"            # durable uploads
+#   docker compose -f docker/compose.prod.yml up -d --build
 #
-# Differences from docker-compose.yml (local dev):
-#   - no `../data:/app/data` DB mount (state lives in Neon + R2/S3)
-#   - no `env_file` (12-factor env; keeps secrets out of images/files)
-#   - no model-cache volume: weights are baked into the image at build time
-#     (a fresh named volume would hide them and force a re-download)
-#   - UVICORN_WORKERS + ENABLE_DOCS=false by default
-#   - readiness gate is a real 503 now ( Phase 3), so depends_on is reliable
-#   - image runs as non-root `appuser` (see Dockerfile.backend USER)
+#   Point the dashboard at the API with a Vercel env var
+#   NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
+#
+# Notes
+#   - The dashboard lives on Vercel by default; the `frontend` service is
+#     behind the `selfhost` profile:
+#         docker compose -f docker/compose.prod.yml --profile selfhost up -d
+#   - Only Caddy publishes ports. The API and dashboard are reachable only
+#     from the internal compose network, so nobody can bypass TLS and the
+#     per-IP rate limiter always sees the real client.
+#   - UVICORN_WORKERS defaults to 1: the rate limiters are in-process.
+#     Scale only behind a shared limiter (Cloudflare/Redis).
+#   - Object storage is mandatory: the container filesystem is ephemeral, so
+#     uploads would vanish on every redeploy without a bucket.
 services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: botbase-db-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-botbase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-botbase}
+      # Deterministic collation so ORDER BY does not change between hosts.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-botbase} -d ${POSTGRES_DB:-botbase}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
-    container_name: rag-backend-prod
+      args:
+        # Set WARM_MODELS=0 to skip baking the models into the image (they
+        # are then cached in the hf-cache volume on first boot).
+        WARM_MODELS: ${WARM_MODELS:-1}
+    container_name: botbase-api-prod
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       DEBUG: "false"
       ENABLE_DOCS: "false"
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
       RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to your Neon URL}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to postgresql://botbase:<pw>@db:5432/botbase}
+      PG_POOL_MIN_SIZE: ${PG_POOL_MIN_SIZE:-2}
+      PG_POOL_MAX_SIZE: ${PG_POOL_MAX_SIZE:-10}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY to 32+ random bytes}
       API_KEY: ${API_KEY:?set API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-inclusionai/ling-3.0-flash-fin:free}
+      # openrouter/free auto-routes to an available free model; pin a specific
+      # model id here if you prefer (invalid ids return 404 and fall through
+      # to LLM_FALLBACK_MODEL, so the chat still works but logs an error).
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
       LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-openrouter/free}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS to your dashboard origin}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your API base URL}
+      HOSTED_BASE_URL: ${HOSTED_BASE_URL:?set HOSTED_BASE_URL to your dashboard origin}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-auto}
-      S3_BUCKET: ${S3_BUCKET:-}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET for durable production uploads}
       S3_PREFIX: ${S3_PREFIX:-botbase}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
       S3_REGION: ${S3_REGION:-auto}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
       HF_HOME: /app/.hf-cache
-    ports:
-      - "8000:8000"
+      UPLOAD_DIR: /app/data/uploads
+      PROCESSED_DIR: /app/data/processed
+    volumes:
+      # Agent icons and any local-disk uploads live here: they must survive
+      # a container rebuild.
+      - uploads:/app/data/uploads
+      - processed:/app/data/processed
+      - hf-cache:/app/.hf-cache
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
-    restart: unless-stopped
+      start_period: 60s
+    logging: *logging
 
   frontend:
+    profiles: ["selfhost"]
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_BASE_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your API base URL}
         NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-BotBase}
-        NEXT_PUBLIC_SITE_URL: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS to your dashboard origin}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?set NEXT_PUBLIC_SITE_URL to your single dashboard origin}
     container_name: botbase-dashboard-prod
+    restart: unless-stopped
+    init: true
     environment:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
-    ports:
-      - "3000:3000"
+      NEXT_PUBLIC_API_BASE_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your API base URL}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-BotBase}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?set NEXT_PUBLIC_SITE_URL to your single dashboard origin}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *logging
+
+  proxy:
+    image: caddy:2-alpine
+    container_name: botbase-proxy-prod
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
-    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN to the API hostname, e.g. api.yourdomain.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: *logging
+
+volumes:
+  pgdata:
+  uploads:
+  processed:
+  hf-cache:
+  caddy-data:
+  caddy-config:

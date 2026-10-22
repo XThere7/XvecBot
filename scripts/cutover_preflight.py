@@ -11,8 +11,11 @@ Checks (each prints PASS/FAIL/SKIP):
   3. storage      S3/R2 reachable when S3_BUCKET set (head-bucket via list)
   4. migrations   alembic heads applied (pg) / init_db columns present (sqlite)
   5. app config   ENABLE_DOCS=false, ALLOWED_ORIGINS has no localhost (strict),
-                  APP_PUBLIC_URL is https (strict)
-  6. backups      R2 backups/ prefix non-empty when S3 configured (else SKIP)
+                  APP_PUBLIC_URL is https (strict), HOSTED_BASE_URL is a
+                  different origin from APP_PUBLIC_URL
+  6. runtime      PostgreSQL (strict), rate limiting on, a bucket configured,
+                  the upload directory writable
+  7. backups      R2 backups/ prefix non-empty when S3 configured (else SKIP)
 
 Exit: 0 all PASS/SKIP, 1 any FAIL, 2 usage error. --strict turns prod-only
 SKIPs (localhost origins, docs on) into FAILs.
@@ -39,6 +42,9 @@ EXPECTED_TABLES = {
     "chunk_embeddings",
     "agent_embed_tokens",
 }
+
+# The schema revision the production database must be on.
+EXPECTED_ALEMBIC_HEAD = "0005_workspace_and_file_links"
 
 results: list[tuple[str, str, str]] = []
 
@@ -83,7 +89,16 @@ async def check_database() -> None:
                     async with db.execute("SELECT version_num FROM alembic_version") as cur:
                         row = await cur.fetchone()
                     if row:
-                        report("database.alembic", "PASS", "version=" + str(row[0]))
+                        version = str(row[0])
+                        if version == EXPECTED_ALEMBIC_HEAD:
+                            report("database.alembic", "PASS", "version=" + version)
+                        else:
+                            report(
+                                "database.alembic",
+                                "FAIL",
+                                f"version={version} (expected {EXPECTED_ALEMBIC_HEAD}) — "
+                                "run: alembic -c backend/alembic.ini upgrade head",
+                            )
                     else:
                         report("database.alembic", "FAIL", "version table empty")
                 except Exception as exc:
@@ -104,6 +119,28 @@ async def check_database() -> None:
                     report("database.phase2-columns", "PASS", "object-storage columns present")
                 else:
                     report("database.phase2-columns", "FAIL", "run the app once (init_db backfills)")
+                # Stage 2 data-retention columns.
+                async with db.execute("PRAGMA table_info(conversations)") as cur:
+                    conv_cols = {r["name"] for r in await cur.fetchall()}
+                async with db.execute("PRAGMA table_info(documents)") as cur:
+                    doc_cols = {r["name"] for r in await cur.fetchall()}
+                missing = []
+                if "workspace_id" not in conv_cols:
+                    missing.append("conversations.workspace_id")
+                if "file_path" not in doc_cols:
+                    missing.append("documents.file_path")
+                if missing:
+                    report(
+                        "database.retention-columns",
+                        "FAIL",
+                        f"missing: {missing} (run the app once, or apply migration 0005)",
+                    )
+                else:
+                    report(
+                        "database.retention-columns",
+                        "PASS",
+                        "conversations.workspace_id + documents.file_path present",
+                    )
     except Exception as exc:
         report("database.reachable", "FAIL", str(exc)[:200])
 
@@ -155,6 +192,68 @@ async def check_app_config(strict: bool) -> None:
     else:
         report("config.public-url", "PASS" if settings.app_public_url.startswith("https://") else "SKIP", settings.app_public_url)
 
+    # The dashboard origin that serves /chat/<token> must be the DASHBOARD,
+    # not the API origin. Pointing both at the API breaks hosted links and
+    # the hosted-origin allowance.
+    hosted = (settings.hosted_base_url or "").rstrip("/")
+    api = (settings.app_public_url or "").rstrip("/")
+    if hosted and hosted == api:
+        report(
+            "config.hosted-url",
+            "FAIL",
+            "HOSTED_BASE_URL equals APP_PUBLIC_URL (hosted links would point at the API)",
+        )
+    elif strict and not hosted.startswith("https://"):
+        report("config.hosted-url", "FAIL", f"HOSTED_BASE_URL={settings.hosted_base_url}")
+    else:
+        report("config.hosted-url", "PASS", settings.hosted_base_url)
+
+
+async def check_runtime(strict: bool) -> None:
+    """Runtime posture that only matters once real traffic arrives."""
+    from app.core.config import settings
+
+    if settings.is_postgres:
+        report("runtime.database", "PASS", "PostgreSQL")
+    else:
+        report(
+            "runtime.database",
+            "FAIL" if strict else "SKIP",
+            "DATABASE_URL is not PostgreSQL (production uses Postgres + pgvector)",
+        )
+
+    if settings.rate_limit_enabled:
+        report("runtime.rate-limit", "PASS", f"enabled ({settings.rate_limit_per_minute}/min)")
+    else:
+        report(
+            "runtime.rate-limit",
+            "FAIL" if strict else "SKIP",
+            "RATE_LIMIT_ENABLED=false (public endpoints would be unprotected)",
+        )
+
+    if not settings.use_s3_storage:
+        report(
+            "runtime.storage",
+            "FAIL" if strict else "SKIP",
+            "S3_BUCKET unset — the container filesystem is ephemeral, uploads would be lost",
+        )
+    else:
+        report("runtime.storage", "PASS", f"bucket '{settings.s3_bucket}'")
+
+    # The upload directory must be writable by the runtime user (agent icons
+    # and local-disk uploads live there).
+    try:
+        from app.core.config import settings as _s
+
+        path = _s.workspace_upload_path
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".preflight-write-probe"
+        probe.write_text("ok")
+        probe.unlink()
+        report("runtime.uploads-writable", "PASS", str(path))
+    except Exception as exc:
+        report("runtime.uploads-writable", "FAIL", str(exc)[:200])
+
 
 async def check_backups() -> None:
     from app.core.config import settings
@@ -190,6 +289,7 @@ async def main(strict: bool) -> int:
     await check_database()
     await check_storage()
     await check_app_config(strict)
+    await check_runtime(strict)
     await check_backups()
     fails = [r for r in results if r[1] == "FAIL"]
     print(f"\npreflight: {len(results) - len(fails)}/{len(results)} ok ({len(fails)} FAIL)")

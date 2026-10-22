@@ -1,0 +1,40 @@
+# BotBase API — TLS termination (Caddy).
+#
+# The hostname comes from the API_DOMAIN environment variable that
+# docker/compose.prod.yml passes in.
+#
+# Cloudflare note (important):
+#   Keep the DNS record for this hostname DNS-ONLY (grey cloud). Caddy then
+#   forwards the real client IP in X-Forwarded-For, which is what the API's
+#   per-IP rate limiter buckets on. If you switch the record to Cloudflare's
+#   proxy (orange cloud), the peer becomes a Cloudflare edge IP and every
+#   visitor would share one rate-limit bucket — in that case uncomment the
+#   CF-Connecting-IP line below so the real client IP is still forwarded.
+#
+# The API itself is not published to the host: only this container exposes
+# 80/443, so nobody can bypass TLS or the proxy.
+
+{
+	email {$ACME_EMAIL:botbase-admin@example.com}
+	# Uncomment to use Cloudflare's DNS-01 challenge instead of HTTP-01:
+	# (needs a Cloudflare API token in the environment)
+	# acme_dns cloudflare {env.CF_API_TOKEN}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# Caddy adds these by default; the API sets its own CORS headers.
+		-Server
+	}
+
+	reverse_proxy backend:8000 {
+		# header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

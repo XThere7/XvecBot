@@ -11,6 +11,9 @@ Usage:
   python scripts/staging_smoke.py --base-url https://api.yourplatform.com --no-chat
 
 --no-chat skips the LLM step (use when the target has no LLM key).
+--db=postgres|sqlite|any asserts which database engine the target actually
+runs on (default: any). This catches the classic "the smoke test passed
+against my laptop's SQLite, not the production database" mistake.
 Exit 0 when every step hits its expected status, else 1. Prints a step table.
 """
 from __future__ import annotations
@@ -32,10 +35,35 @@ def step(name: str, ok: bool, detail: str = "") -> None:
         raise SystemExit(f"smoke FAILED at: {name} ({detail})")
 
 
+def detect_engine(base: str) -> str:
+    """Ask the target which database engine it is using."""
+    try:
+        with httpx.Client(base_url=base, timeout=30.0) as c:
+            r = c.get("/health/ready")
+            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    except Exception:
+        return "unknown"
+    engine = str(body.get("engine", "")).lower()
+    if engine:
+        return engine
+    database = str(body.get("database", "")).lower()
+    if "postgres" in database:
+        return "postgres"
+    if "sqlite" in database:
+        return "sqlite"
+    return "unknown"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://localhost:8000")
     ap.add_argument("--no-chat", action="store_true")
+    ap.add_argument(
+        "--db",
+        choices=["any", "postgres", "sqlite"],
+        default="any",
+        help="assert which database engine the target runs on",
+    )
     args = ap.parse_args()
     base = args.base_url.rstrip("/")
     tag = uuid.uuid4().hex[:8]
@@ -46,6 +74,16 @@ def main() -> int:
         step("health", r.status_code == 200, str(r.status_code))
         r = c.get("/health/ready")
         step("readiness", r.status_code == 200, str(r.status_code))
+
+        engine = detect_engine(base)
+        if args.db == "any":
+            print(f"[info] target database engine: {engine}")
+        else:
+            step(
+                f"database-engine-{args.db}",
+                engine == args.db,
+                f"target reports '{engine}'",
+            )
 
         r = c.post("/auth/register", json={"email": email, "password": "pw123456"})
         step("register", r.status_code == 201, str(r.status_code))

@@ -1,0 +1,67 @@
+# Local integration stack: PostgreSQL + pgvector and an S3-compatible
+# endpoint, for running the test suite and the E2E scripts against real
+# services without touching the development database.
+#
+#   docker compose -f docker/docker-compose.test.yml up -d db s3
+#   export DATABASE_URL="postgresql://botbase:botbase_pw@127.0.0.1:5433/botbase_test"
+#   export BOTBASE_TEST_DATABASE_URL="$DATABASE_URL"
+#   cd backend && PYTHONPATH=. ../.venv/bin/python -m pytest app/tests/ -q
+#
+#   # create the bucket once
+#   python - <<'PY'
+#   import boto3
+#   from botocore.config import Config
+#   s3 = boto3.client("s3", endpoint_url="http://127.0.0.1:9000",
+#                     aws_access_key_id="test", aws_secret_access_key="test",
+#                     region_name="us-east-1",
+#                     config=Config(signature_version="s3v4", s3={"addressing_style": "path"}))
+#   s3.create_bucket(Bucket="botbase")
+#   PY
+#
+# The port 5433 avoids clashing with a local PostgreSQL you may already run
+# (scripts/dev_postgres.sh uses 5433 as well — pick one or the other).
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: botbase-test-db
+    environment:
+      POSTGRES_USER: botbase
+      POSTGRES_PASSWORD: botbase_pw
+      POSTGRES_DB: botbase_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata-test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botbase -d botbase_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # S3-compatible endpoint for the presigned-upload tests. MinIO's
+  # open-source server is archived, so this uses moto's server instead; it
+  # speaks the same S3 API (SigV4 presigned URLs included).
+  s3:
+    image: python:3.11-slim
+    container_name: botbase-test-s3
+    command:
+      - bash
+      - -c
+      - >-
+        pip install --no-cache-dir "moto[server]==5.0.18" >/dev/null &&
+        python -m moto.server -p 9000 -H 0.0.0.0
+    ports:
+      - "127.0.0.1:9000:9000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+volumes:
+  pgdata-test:
