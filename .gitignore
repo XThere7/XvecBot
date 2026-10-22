@@ -47,6 +47,8 @@ phase3.md
 phase4.md
 phase5.md
 multi-tenant.md
+everything.txt
+xdh.txt
 README.md
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
@@ -58,3 +60,17 @@ Thumbs.db
 # Generated widget production build (run: python backend/scripts/build_widget.py)
 backend/app/static/widget.min.js
 data/rag.db
+
+# Local hosting go-live plan (not part of the shipped repo)
+go-live-hosting-plan.md
+
+# All local documentation and notes stay on this machine, never in the repo.
+*.md
+*.txt
+# ...except the files the build and the e2e fixtures need, plus the two
+# operational documents the VPS itself needs (the runbook and the restore
+# procedure). Drop these two lines if you want them local-only as well.
+!requirements.txt
+!BaseBot_UI/e2e/catalogue.txt
+!deploy/README.md
+!deploy/restore.md
