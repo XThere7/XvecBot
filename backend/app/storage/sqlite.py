@@ -26,13 +26,15 @@ async def insert_document(
     filename: str,
     total_pages: int,
     file_size: int,
+    file_path: Optional[str] = None,
 ) -> str:
     doc_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        """INSERT INTO documents (id, filename, upload_date, total_pages, file_size, status)
-           VALUES (?, ?, ?, ?, ?, 'processing')""",
-        (doc_id, filename, now, total_pages, file_size),
+        """INSERT INTO documents
+           (id, filename, upload_date, total_pages, file_size, status, file_path)
+           VALUES (?, ?, ?, ?, ?, 'processing', ?)""",
+        (doc_id, filename, now, total_pages, file_size, file_path),
     )
     await db.commit()
     log.info("Document inserted", doc_id=doc_id, filename=filename)
@@ -128,6 +130,11 @@ async def insert_chunk(
 async def get_chunks_by_ids(
     db: aiosqlite.Connection, chunk_ids: list[str]
 ) -> list[Chunk]:
+    # An empty IN () list is a syntax error on Postgres (SQLite tolerates it).
+    # Guard here so a query that matches nothing degrades to "no chunks"
+    # instead of a 500.
+    if not chunk_ids:
+        return []
     placeholders = ",".join("?" * len(chunk_ids))
     async with db.execute(
         f"SELECT * FROM chunks WHERE id IN ({placeholders})", chunk_ids
@@ -194,12 +201,14 @@ async def count_chunks(db: aiosqlite.Connection, document_id: str) -> int:
 
 # ── Conversations ─────────────────────────────────────────────────────────────
 
-async def create_conversation(db: aiosqlite.Connection) -> str:
+async def create_conversation(
+    db: aiosqlite.Connection, workspace_id: Optional[str] = None
+) -> str:
     conv_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "INSERT INTO conversations (id, created_at) VALUES (?, ?)",
-        (conv_id, now),
+        "INSERT INTO conversations (id, created_at, workspace_id) VALUES (?, ?, ?)",
+        (conv_id, now, workspace_id),
     )
     await db.commit()
     return conv_id

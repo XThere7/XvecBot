@@ -18,22 +18,60 @@ caller — execute() raises RuntimeError for PRAGMA to surface missed branches.
 """
 from __future__ import annotations
 
-import re
 from typing import Any, Sequence
-
-_QMARK = re.compile(r"\?")
 
 
 def translate_qmarks(sql: str) -> str:
-    """Replace each `?` placeholder with Postgres `$n` numbering."""
+    """
+    Replace each `?` placeholder with Postgres `$n` numbering.
+
+    A `?` that appears inside a string literal (or a quoted identifier) is
+    left alone: it is data, not a parameter. SQLite happily accepts the
+    literal, so getting this wrong would only ever surface on Postgres.
+    """
+    out: list[str] = []
     idx = 0
-
-    def _repl(_: re.Match) -> str:
-        nonlocal idx
-        idx += 1
-        return f"${idx}"
-
-    return _QMARK.sub(_repl, sql)
+    in_string = False
+    in_ident = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if in_string:
+            out.append(ch)
+            if ch == "'":
+                # '' inside a literal is an escaped quote.
+                if i + 1 < n and sql[i + 1] == "'":
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                in_string = False
+            i += 1
+            continue
+        if in_ident:
+            out.append(ch)
+            if ch == '"':
+                in_ident = False
+            i += 1
+            continue
+        if ch == "'":
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_ident = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "?":
+            idx += 1
+            out.append(f"${idx}")
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def _looks_like_sqlite_only(sql: str) -> str | None:

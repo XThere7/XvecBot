@@ -33,7 +33,10 @@ CREATE TABLE IF NOT EXISTS documents (
     upload_date TEXT NOT NULL,
     total_pages INTEGER NOT NULL,
     file_size   INTEGER NOT NULL DEFAULT 0,
-    status      TEXT NOT NULL DEFAULT 'processing'
+    status      TEXT NOT NULL DEFAULT 'processing',
+    -- Where the uploaded bytes live (legacy direct uploads). Needed so a
+    -- delete can remove the file instead of leaving it on the volume.
+    file_path   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -89,11 +92,14 @@ CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(workspace_id, is_active);
 
 CREATE TABLE IF NOT EXISTS conversations (
-    id         TEXT PRIMARY KEY,
-    created_at TEXT NOT NULL,
-    agent_id   TEXT REFERENCES agents(id) ON DELETE CASCADE,
-    title      TEXT,
-    updated_at TEXT NOT NULL DEFAULT ''
+    id           TEXT PRIMARY KEY,
+    created_at   TEXT NOT NULL,
+    agent_id     TEXT REFERENCES agents(id) ON DELETE CASCADE,
+    title        TEXT,
+    updated_at   TEXT NOT NULL DEFAULT '',
+    -- Links a conversation to the workspace whose data it quotes, so the
+    -- workspace teardown can delete the transcript as well.
+    workspace_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_agent ON conversations(agent_id);
 
@@ -174,6 +180,9 @@ PG_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "agent_id": "TEXT REFERENCES agents(id) ON DELETE CASCADE",
         "title": "TEXT",
         "updated_at": "TEXT NOT NULL DEFAULT ''",
+        # Links a transcript to the workspace whose data it quotes, so the
+        # workspace teardown can delete the transcript too.
+        "workspace_id": "TEXT",
     },
     "agents": {"welcome_message": "TEXT", "icon_url": "TEXT"},
     "chunks": {"workspace_id": "TEXT", "doc_id": "TEXT"},
@@ -183,4 +192,15 @@ PG_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "content_type": "TEXT",
         "etag": "TEXT",
     },
+    # Where the bytes of a legacy direct upload live, so deleting the
+    # document can delete the file instead of leaving it on the volume.
+    "documents": {"file_path": "TEXT"},
 }
+
+# Indexes that depend on a column added by PG_ADDITIVE_COLUMNS. They are
+# created after the ALTERs, otherwise an existing table without the column
+# would fail the whole boot.
+PG_ADDITIVE_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_conversations_workspace "
+    "ON conversations(workspace_id)",
+)

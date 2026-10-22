@@ -3,7 +3,7 @@ graph/workflow.py
 Assembles the LangGraph StateGraph for the RAG pipeline.
 
 Graph topology:
-  START -> retrieve -> rerank -> grounding -> generate -> citations -> END
+  START -> retrieve -> rerank -> grounding -> generate -> build_citations -> END
 
 The grounding node uses a conditional edge:
   - If grounded=True  -> generate
@@ -65,15 +65,17 @@ def build_rag_graph(
     graph.add_node("rerank",    _rerank)
     graph.add_node("grounding", _grounding)
     graph.add_node("generate",  _generate)
-    graph.add_node("citations", _citations)
+    # Node names and RAGState keys share one namespace in LangGraph. The state
+    # already has a `citations` key, so the node must use a different name.
+    graph.add_node("build_citations", _citations)
 
     # Wire the edges
     graph.add_edge(START,       "retrieve")
     graph.add_edge("retrieve",  "rerank")
     graph.add_edge("rerank",    "grounding")
     graph.add_edge("grounding", "generate")
-    graph.add_edge("generate",  "citations")
-    graph.add_edge("citations", END)
+    graph.add_edge("generate",  "build_citations")
+    graph.add_edge("build_citations", END)
 
     compiled = graph.compile()
     log.info("RAG graph compiled")

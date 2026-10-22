@@ -164,9 +164,16 @@ async def delete_embeddings_for_document(
     db: Any,
     document_id: str,
 ) -> int:
-    """Delete all embeddings whose chunk belongs to the given document."""
+    """Delete all embeddings whose chunk belongs to the given document.
+
+    Workspace-trained documents store the same UUID in both ``document_id``
+    and ``doc_id``. Match either column so older rows created before the
+    metadata backfill are still cleaned up. Legacy documents have no
+    ``doc_id``, so the extra predicate is harmless there.
+    """
     async with db.execute(
-        "SELECT id FROM chunks WHERE document_id = ?", (document_id,)
+        "SELECT id FROM chunks WHERE document_id = ? OR doc_id = ?",
+        (document_id, document_id),
     ) as cur:
         chunk_rows = await cur.fetchall()
 
@@ -193,16 +200,22 @@ async def delete_by_workspace(
     Same pattern as delete_embeddings_for_document: resolve chunk_ids
     relationally, then remove them from chunk_embeddings.
 
-    Linkage: chunks -> documents (FK) -> workspace_documents via filename.
-    (chunks.document_id references documents(id); workspace_documents rows
-    share the same original filename as their documents row.)
+    Ownership is resolved by id, never by filename. Filenames are not unique
+    (two workspaces can both upload ``policy.pdf``), and joining on filename
+    could delete another tenant's embeddings. ``chunks.workspace_id`` is the
+    primary ownership marker; the two subqueries also cover rows trained by an
+    older revision before that metadata was written.
     """
     async with db.execute(
         """SELECT c.id FROM chunks c
-           JOIN documents d ON d.id = c.document_id
-           JOIN workspace_documents wd ON wd.filename = d.filename
-           WHERE wd.workspace_id = ?""",
-        (workspace_id,),
+           WHERE c.workspace_id = ?
+              OR c.doc_id IN (
+                  SELECT id FROM workspace_documents WHERE workspace_id = ?
+              )
+              OR c.document_id IN (
+                  SELECT id FROM workspace_documents WHERE workspace_id = ?
+              )""",
+        (workspace_id, workspace_id, workspace_id),
     ) as cur:
         chunk_rows = await cur.fetchall()
 

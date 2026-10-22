@@ -144,6 +144,11 @@ def _widget_js_path() -> str:
     return "widget.js"
 
 
+def _build_hosted_url(token: str) -> str:
+    """Shareable Method-B page for an embed token (botbase domain)."""
+    return f"{settings.hosted_base_url.rstrip('/')}/chat/{token}"
+
+
 def _build_snippet(token: str) -> str:
     """Ready-to-paste HTML snippet for embedding the widget."""
     base = settings.app_public_url.rstrip("/")
@@ -332,4 +337,5 @@ async def get_snippet(
     return EmbedSnippet(
         snippet=_build_snippet(row["token"]),
         token=row["token"],
+        hosted_url=_build_hosted_url(row["token"]),
     )

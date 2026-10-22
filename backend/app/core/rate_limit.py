@@ -25,6 +25,28 @@ log = get_logger(__name__)
 _PREFIXES = ("/auth/", "/auth", "/public/", "/public")
 
 
+def _client_ip(request: Request) -> str:
+    """
+    Best-effort client IP for rate-limit bucketing.
+
+    Behind a reverse proxy (Caddy, Vercel, Render, Fly) every request would
+    otherwise appear to come from the proxy, so ALL visitors would share a
+    single 60/minute bucket. Uvicorn runs with --proxy-headers in the
+    container image, which already resolves request.client; the explicit
+    header check keeps this correct behind proxies uvicorn does not know.
+
+    Safe because the app port is never published directly to the internet —
+    only the reverse proxy can reach it. If you ever expose the API straight
+    to the public internet, remove the header check (it can be spoofed).
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, *, enabled: bool, per_minute: int):
         super().__init__(app)
@@ -49,7 +71,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit = max(1, settings.rate_limit_per_minute or self.per_minute)
         window = 60.0
         now = time.monotonic()
-        client = request.client.host if request.client else "unknown"
+        client = _client_ip(request)
         key = f"{client}:{request.url.path.rsplit('/', 1)[0]}"
         hits = [t for t in self._hits.get(key, []) if now - t < window]
         if len(hits) >= limit:

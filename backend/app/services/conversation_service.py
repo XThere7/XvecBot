@@ -56,15 +56,22 @@ async def create_conversation(
     db: aiosqlite.Connection,
     agent_id: str,
     title: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> dict:
-    """Create a conversation for an agent. Defaults the title if none is given."""
+    """
+    Create a conversation for an agent. Defaults the title if none is given.
+
+    `workspace_id` links the transcript to the workspace whose documents it
+    quotes, so deleting that workspace also deletes the transcript.
+    """
     conversation_id = str(uuid.uuid4())
     now = _now()
     final_title = title if title else DEFAULT_TITLE
     await db.execute(
-        """INSERT INTO conversations (id, agent_id, title, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?)""",
-        (conversation_id, agent_id, final_title, now, now),
+        """INSERT INTO conversations
+           (id, agent_id, title, created_at, updated_at, workspace_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (conversation_id, agent_id, final_title, now, now, workspace_id),
     )
     await db.commit()
     return await get_conversation(db, conversation_id)

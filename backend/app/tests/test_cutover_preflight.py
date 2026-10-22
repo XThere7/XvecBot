@@ -4,6 +4,7 @@ The go/no-go gate itself: non-strict passes on a sane local checkout,
 --strict rejects it (loopback origins, docs on, http URL), and every
 reported line carries one of PASS/FAIL/SKIP.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +25,12 @@ async def test_preflight_local_passes_non_strict():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "[PASS] database.tables" in proc.stdout
-    assert "[PASS] database.phase2-columns" in proc.stdout
+    if os.environ.get("BOTBASE_TEST_DATABASE_URL", "").strip():
+        # Postgres mode: the preflight checks the alembic revision instead of
+        # the SQLite-only object-storage columns.
+        assert "[PASS] database.alembic" in proc.stdout
+    else:
+        assert "[PASS] database.phase2-columns" in proc.stdout
     for line in proc.stdout.splitlines():
         if line.startswith("["):
             assert line.startswith(("[PASS]", "[FAIL]", "[SKIP]")), line

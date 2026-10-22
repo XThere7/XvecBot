@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
+from ..core.uploads import UploadTooLarge, atomic_replace, save_upload_limited
 from ..services.workspace_query_service import query_workspace
 from ..services.workspace_training_service import train_workspace_document
 from ..storage import vector_store
@@ -74,14 +75,30 @@ async def upload_document(
                 detail=f"Unsupported file type '{ext or 'none'}'. Allowed: .pdf, .txt, .docx",
             )
 
-        content = await file.read()
-
         dest_dir = settings.workspace_upload_path / workspace_id
         os.makedirs(dest_dir, exist_ok=True)
 
         doc_id = str(uuid.uuid4())
         save_path = dest_dir / f"{doc_id}_{original}"
-        save_path.write_bytes(content)
+        temp_path = dest_dir / f".{doc_id}_{original}.part"
+
+        try:
+            size_bytes = await save_upload_limited(
+                file, temp_path, settings.max_upload_bytes
+            )
+        except UploadTooLarge as exc:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"File too large (max {settings.max_upload_bytes} bytes)."
+                ),
+            ) from exc
+
+        try:
+            atomic_replace(temp_path, save_path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
 
         now = datetime.now(timezone.utc).isoformat()
         try:
@@ -96,7 +113,7 @@ async def upload_document(
                     original,
                     str(save_path),
                     ext.lstrip("."),
-                    len(content),
+                    size_bytes,
                     now,
                 ),
             )
@@ -114,7 +131,7 @@ async def upload_document(
         doc_id=doc_id,
         workspace_id=workspace_id,
         filename=original,
-        size=len(content),
+        size=size_bytes,
     )
     return dict(row)
 
@@ -438,15 +455,22 @@ async def delete_document(
         # 2. remove vector embeddings for this document
         await vector_store.delete_embeddings_for_document(db, doc_id)
 
-        # 3. remove chunk rows (text content) for this document
+        # 3. remove chunk rows (text content) for this document. Both columns
+        # are checked so older rows that predate the doc_id backfill are
+        # included.
         await db.execute(
-            "DELETE FROM chunks WHERE document_id = ?", (doc_id,)
+            "DELETE FROM chunks WHERE document_id = ? OR doc_id = ?",
+            (doc_id, doc_id),
         )
 
         # 4. remove the workspace_documents row
         await db.execute(
             "DELETE FROM workspace_documents WHERE id = ?", (doc_id,)
         )
+
+        # 5. remove the shadow `documents` row created by training. Without
+        # this, the extracted text's parent row survives deletion forever.
+        await db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
         await db.commit()
 
     log.info(

@@ -17,6 +17,57 @@ from ..storage import sqlite as db_ops
 log = get_logger(__name__)
 
 
+async def _link_conversation_to_workspace(
+    db: aiosqlite.Connection,
+    conversation_id: str,
+    citations: list,
+) -> None:
+    """
+    Attach a legacy query transcript to the workspace it quotes.
+
+    The legacy `/api/v1/query` API is global, so its conversations used to
+    have no owner and survived a workspace delete. When the answer draws on a
+    single workspace's documents we can attribute the transcript to it; a
+    transcript that spans several tenants stays global (deleting it would
+    destroy another tenant's data).
+    """
+    chunk_ids = [
+        c.get("chunk_id")
+        for c in (citations or [])
+        if isinstance(c, dict) and c.get("chunk_id")
+    ]
+    if not chunk_ids:
+        return
+    placeholders = ",".join("?" * len(chunk_ids))
+    async with db.execute(
+        f"SELECT DISTINCT workspace_id FROM chunks WHERE id IN ({placeholders})",
+        chunk_ids,
+    ) as cur:
+        rows = await cur.fetchall()
+    workspaces: set[str] = set()
+    for r in rows:
+        # sqlite3.Row and asyncpg.Record both support r["col"] / r.keys()
+        try:
+            value = r["workspace_id"]
+        except (KeyError, IndexError):
+            continue
+        if value:
+            workspaces.add(value)
+    if len(workspaces) != 1:
+        return
+    workspace_id = next(iter(workspaces))
+    await db.execute(
+        "UPDATE conversations SET workspace_id = ? WHERE id = ?",
+        (workspace_id, conversation_id),
+    )
+    await db.commit()
+    log.info(
+        "Legacy conversation linked to workspace",
+        conversation_id=conversation_id,
+        workspace_id=workspace_id,
+    )
+
+
 async def process_query(
     db: aiosqlite.Connection,
     request: QueryRequest,
@@ -78,6 +129,15 @@ async def process_query(
         content=final_state["answer"],
         citations=final_state["citations"],
     )
+
+    # Attribute the transcript to the workspace it quotes (single-tenant case)
+    # so deleting that workspace also deletes the transcript.
+    try:
+        await _link_conversation_to_workspace(
+            db, conversation_id, final_state.get("citations") or []
+        )
+    except Exception as exc:  # never fail a good answer over bookkeeping
+        log.warning("Could not link legacy conversation to a workspace", error=str(exc))
 
     log.info(
         "Query complete",

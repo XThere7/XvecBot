@@ -52,6 +52,10 @@ async def readiness():
     body = {
         "status": "ready" if db_ok else "not_ready",
         "database": "ok" if db_ok else "error",
+        # Which engine is actually serving this instance. Additive field:
+        # operators use it to confirm the production box is on PostgreSQL and
+        # not on a stray SQLite file.
+        "engine": "postgres" if settings.is_postgres else "sqlite",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if db_ok:

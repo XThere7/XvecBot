@@ -8,13 +8,15 @@ an in-process per-token rate limiter and never exposes internal agent config.
 """
 import time
 from collections import defaultdict
+from io import BytesIO
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from ..core.database import get_db
 from ..core.config import settings
+from ..core.database import get_db
 from ..core.logging import get_logger
 from ..models.embed_token import PublicAgentInfo
 from ..services import embed_service
@@ -103,17 +105,22 @@ async def public_chat(
     payload: PublicChatRequest,
     request: Request,
 ):
-    _check_rate_limit(payload.token)
-
     origin = request.headers.get("origin")
 
     async with get_db() as db:
-        result = await embed_service.public_chat(
+        # Validate token, agent state and Origin BEFORE consuming the per-token
+        # bucket. Otherwise a blocked origin can deny service to the legitimate
+        # customer site. The IP-scoped middleware remains the outer abuse gate.
+        embed, agent = await embed_service.validate_public_request(
+            db, payload.token, origin
+        )
+        _check_rate_limit(payload.token)
+        await embed_service.record_token_use(db, embed["id"])
+        result = await embed_service.chat_for_public_agent(
             db=db,
-            token=payload.token,
+            agent=agent,
             message=payload.message,
             conversation_id=payload.conversation_id,
-            origin=origin,
         )
 
     # Strip internal fields — the public surface exposes only these three.
@@ -147,4 +154,50 @@ async def public_agent_info(
             (agent.get("welcome_message") or "").strip() or DEFAULT_WELCOME_MESSAGE
         ),
         icon_url=icon_url,
+    )
+
+
+def _make_qr_png(payload: str) -> bytes:
+    """Render a scannable QR PNG for one short URL (print/shop-window grade)."""
+    import qrcode
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@router.get("/qr/{token}", summary="QR code PNG for the hosted chat page (no auth)")
+async def public_qr(token: str):
+    """
+    Method C: downloadable QR that phone cameras resolve straight to the
+    hosted chat page. The encoded URL is always the canonical hosted link —
+    client-supplied URLs are never encoded (open-redirect/QR-relay abuse).
+    Same token validity rules as the agent-info endpoint.
+    """
+    async with get_db() as db:
+        embed, agent = await embed_service.validate_public_request(db, token, None)
+        _ = agent  # validity is the check; no agent fields leave this route.
+        _check_rate_limit(f"qr:{token}")
+        await embed_service.record_token_use(db, embed["id"])
+    url = f"{settings.hosted_base_url.rstrip('/')}/chat/{token}"
+
+    import asyncio
+
+    png = await asyncio.to_thread(_make_qr_png, url)
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f'inline; filename="botbase-chat-qr.png"',
+        },
     )

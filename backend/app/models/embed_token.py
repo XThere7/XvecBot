@@ -66,6 +66,8 @@ class EmbedSnippet(BaseModel):
     snippet: str
     # Full token; this response is JWT-protected and intended for copy/paste.
     token: str
+    # Shareable hosted chat page (Method B): <hosted_base_url>/chat/<token>.
+    hosted_url: str
 
 
 class PublicAgentInfo(BaseModel):

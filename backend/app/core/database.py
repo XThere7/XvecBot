@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS documents (
     upload_date TEXT NOT NULL,
     total_pages INTEGER NOT NULL,
     file_size   INTEGER NOT NULL DEFAULT 0,
-    status      TEXT NOT NULL DEFAULT 'processing'
+    status      TEXT NOT NULL DEFAULT 'processing',
+    file_path   TEXT
 );
 """
 
@@ -62,10 +63,14 @@ CREATE TABLE IF NOT EXISTS chunks (
     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     page        INTEGER NOT NULL,
     chunk_index INTEGER NOT NULL,
-    text        TEXT NOT NULL
+    text        TEXT NOT NULL,
+    workspace_id TEXT,
+    doc_id       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_page     ON chunks(document_id, page);
+CREATE INDEX IF NOT EXISTS idx_chunks_workspace ON chunks(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id);
 """
 
 CREATE_CONVERSATIONS = """
@@ -211,6 +216,17 @@ AGENT_CONVERSATION_COLUMNS = {
     "agent_id": "TEXT REFERENCES agents(id) ON DELETE CASCADE",
     "title": "TEXT",
     "updated_at": "TEXT NOT NULL DEFAULT ''",
+    # Links a conversation to the workspace that owns the data it quotes.
+    # Agent chats, workspace chats and single-tenant legacy queries set it,
+    # so deleting a workspace can also delete the transcripts it produced.
+    "workspace_id": "TEXT",
+}
+
+# `documents` predates the workspace documents table. Legacy uploads keep
+# their bytes on the upload volume, so the row has to remember the path —
+# otherwise deleting the document leaves the file behind forever.
+LEGACY_DOCUMENT_COLUMNS = {
+    "file_path": "TEXT",
 }
 
 # `agents` predates the Phase 4 widget, so the same CREATE TABLE IF NOT EXISTS
@@ -296,6 +312,11 @@ async def _init_db_postgres() -> None:
                     f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
                     f"{column} {definition}"
                 )
+        # Indexes over the additive columns (created after the ALTERs).
+        from .pg_schema import PG_ADDITIVE_INDEXES
+
+        for stmt in PG_ADDITIVE_INDEXES:
+            await conn.execute(stmt)
         # Drop the superseded messages.sources column (no-op when absent).
         await conn.execute("ALTER TABLE messages DROP COLUMN IF EXISTS sources")
         # Best-effort ANN index — must never fail boot.
@@ -338,6 +359,7 @@ async def init_db() -> None:
         await db.executescript(CREATE_DEVELOPER_API_KEYS)
         # Agent columns on the pre-existing Phase 1 conversations table (idempotent).
         await _add_columns_if_missing(db, "conversations", AGENT_CONVERSATION_COLUMNS)
+        await _add_columns_if_missing(db, "documents", LEGACY_DOCUMENT_COLUMNS)
         # `agents` gains the Phase 4 widget welcome_message column (idempotent).
         await _add_columns_if_missing(db, "agents", AGENT_TABLE_COLUMNS)
         # Phase 2 object-storage columns on pre-existing workspace_documents.

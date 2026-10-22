@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import aiosqlite
 from fastapi import HTTPException, status
 
+from ..core.config import settings
 from ..core.logging import get_logger
 from .agent_chat_service import chat_with_agent
 
@@ -142,6 +143,17 @@ def _check_origin(origin: Optional[str], allowed: Optional[list[str]]) -> None:
         )
     if host in LOCALHOST_HOSTS or host in allowed:
         return
+    # Method-B hosted pages run on the platform's own dashboard domain. That
+    # origin is always permitted (it is configured, not attacker-controlled),
+    # so merchants never have to allowlist it alongside customer sites.
+    try:
+        hosted_host = (
+            urlparse(settings.hosted_base_url).hostname or ""
+        ).lower() or None
+    except ValueError:
+        hosted_host = None
+    if hosted_host and host == hosted_host:
+        return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail=f"Origin {origin} is not authorised for this widget.",
@@ -156,14 +168,12 @@ async def _get_token_row(db: aiosqlite.Connection, token: str) -> Optional[dict]
     return dict(row) if row is not None else None
 
 
-async def resolve_token(db: aiosqlite.Connection, token: str) -> dict:
-    """
-    Resolve an embed token to its agent.
-
-    Raises 401 if the token is unknown, 403 if it is revoked or its agent is
-    unavailable. Updates last_used_at / request_count fire-and-forget.
-    Returns the agent dict.
-    """
+async def _validate_token_and_origin(
+    db: aiosqlite.Connection,
+    token: str,
+    origin: Optional[str],
+) -> tuple[dict, dict]:
+    """Resolve a token and enforce its agent/origin rules without recording use."""
     embed = await _get_token_row(db, token)
     if embed is None:
         raise HTTPException(
@@ -187,19 +197,39 @@ async def resolve_token(db: aiosqlite.Connection, token: str) -> dict:
             detail="Agent is not available.",
         )
 
-    # Fire-and-forget usage tracking — must never block the chat response.
+    allowed = _parse_allowed_origins(embed.get("allowed_origins"))
+    _check_origin(origin, allowed)
+    return embed, dict(agent_row)
+
+
+async def record_token_use(db: aiosqlite.Connection, embed_id: str) -> None:
+    """Best-effort usage telemetry. Never fails the visitor's request."""
     try:
         await db.execute(
             """UPDATE agent_embed_tokens
                SET last_used_at = ?, request_count = request_count + 1
                WHERE id = ?""",
-            (_now(), embed["id"]),
+            (_now(), embed_id),
         )
         await db.commit()
     except Exception as exc:
         log.warning("Embed token usage update failed", error=str(exc))
 
-    return dict(agent_row)
+
+async def resolve_token(
+    db: aiosqlite.Connection,
+    token: str,
+    origin: Optional[str] = None,
+) -> dict:
+    """
+    Resolve an embed token to its agent and record usage.
+
+    Raises 401 if the token is unknown, 403 if it is revoked/unavailable or its
+    Origin is not allowed. Returns the agent dict.
+    """
+    embed, agent = await _validate_token_and_origin(db, token, origin)
+    await record_token_use(db, embed["id"])
+    return agent
 
 
 def _sanitise_message(message: Optional[str]) -> str:
@@ -222,27 +252,28 @@ def _sanitise_message(message: Optional[str]) -> str:
     return text.strip()
 
 
-async def public_chat(
+async def validate_public_request(
     db: aiosqlite.Connection,
     token: str,
+    origin: Optional[str],
+) -> tuple[dict, dict]:
+    """
+    Validate token, agent and Origin before any rate limiter is touched.
+
+    Returns ``(embed_token_row, agent_row)``. Usage is deliberately not
+    recorded here: the API layer records it only after the request passes its
+    per-token limit, so blocked origins cannot consume a customer's quota.
+    """
+    return await _validate_token_and_origin(db, token, origin)
+
+
+async def chat_for_public_agent(
+    db: aiosqlite.Connection,
+    agent: dict,
     message: str,
     conversation_id: Optional[str],
-    origin: Optional[str],
 ) -> dict:
-    """
-    Handle a public widget chat message.
-
-    Returns the chat_with_agent result (answer, sources, conversation_id,
-    model_used).
-    """
-    agent = await resolve_token(db, token)
-
-    # Origin allow-listing — only enforced when the token restricts origins.
-    embed = await _get_token_row(db, token)
-    allowed = _parse_allowed_origins(embed.get("allowed_origins") if embed else None)
-    _check_origin(origin, allowed)
-
-    # Sanitise first, then validate length against the sanitised text.
+    """Sanitise and process one already-authorised visitor message."""
     cleaned = _sanitise_message(message)
     if not cleaned:
         raise HTTPException(
@@ -261,3 +292,22 @@ async def public_chat(
         message=cleaned,
         db=db,
     )
+
+
+async def public_chat(
+    db: aiosqlite.Connection,
+    token: str,
+    message: str,
+    conversation_id: Optional[str],
+    origin: Optional[str],
+) -> dict:
+    """
+    Handle a public widget chat message (compatibility wrapper).
+
+    API routes should call validate_public_request -> rate limit ->
+    record_token_use -> chat_for_public_agent so validation happens before the
+    limiter. This wrapper keeps the service usable on its own in tests.
+    """
+    embed, agent = await validate_public_request(db, token, origin)
+    await record_token_use(db, embed["id"])
+    return await chat_for_public_agent(db, agent, message, conversation_id)

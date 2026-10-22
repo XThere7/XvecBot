@@ -73,6 +73,15 @@ async def lifespan(app: FastAPI):
 
     log.info("Application shutting down")
 
+    # Release the Postgres pool so connections are closed gracefully instead
+    # of being torn down with the process.
+    try:
+        from .core.pg_pool import close_pg_pool
+
+        await close_pg_pool()
+    except Exception as exc:  # pragma: no cover - shutdown must never raise
+        log.warning("Shutdown cleanup failed", error=str(exc))
+
 
 def create_app() -> FastAPI:
     app = FastAPI(

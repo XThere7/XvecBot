@@ -71,8 +71,9 @@ async def _ensure_chunk_metadata_columns(db) -> None:
 async def _ensure_documents_row(db: aiosqlite.Connection, doc: dict) -> None:
     """
     Create a shadow `documents` row for this workspace document.
-    chunks.document_id has a FK to documents(id), and the existing delete paths
-    (delete_embeddings_for_document / delete_by_workspace) join through it.
+    chunks.document_id has a FK to documents(id), so this row must exist before
+    the indexer writes child rows. It shares the workspace document's UUID so
+    deletion can remove both rows unambiguously.
     """
     async with db.execute(
         "SELECT id FROM documents WHERE id = ?", (doc["id"],)
@@ -87,10 +88,34 @@ async def _ensure_documents_row(db: aiosqlite.Connection, doc: dict) -> None:
             log.debug("Shadow documents row created", doc_id=doc["id"])
 
 
+async def _workspace_document_exists(db: aiosqlite.Connection, doc_id: str) -> bool:
+    async with db.execute(
+        "SELECT 1 FROM workspace_documents WHERE id = ?", (doc_id,)
+    ) as cur:
+        return await cur.fetchone() is not None
+
+
+async def _remove_index_for_document(db: aiosqlite.Connection, doc_id: str) -> None:
+    """
+    Remove the index and shadow row for a document that disappeared mid-train.
+    Safe to call when the rows are already gone (all statements are idempotent).
+    """
+    await vector_store.delete_embeddings_for_document(db, doc_id)
+    await db.execute(
+        "DELETE FROM chunks WHERE document_id = ? OR doc_id = ?",
+        (doc_id, doc_id),
+    )
+    await db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+    await db.commit()
+
+
 async def _clear_previous_index(db: aiosqlite.Connection, doc_id: str) -> None:
     """Remove any prior chunks/embeddings for this document (idempotent re-train)."""
     await vector_store.delete_embeddings_for_document(db, doc_id)
-    await db.execute("DELETE FROM chunks WHERE document_id = ?", (doc_id,))
+    await db.execute(
+        "DELETE FROM chunks WHERE document_id = ? OR doc_id = ?",
+        (doc_id, doc_id),
+    )
     await db.commit()
 
 
@@ -189,6 +214,12 @@ async def train_workspace_document(
         embeddings = await asyncio.to_thread(embed_texts, [c.text for c in chunks])
 
         # 4. Storage prep: metadata columns, shadow documents row, idempotent re-train
+        # A user may delete the document/workspace while extraction and embedding
+        # are running. Re-check immediately before writing the index so we never
+        # recreate data the user just deleted.
+        if not await _workspace_document_exists(db, doc_id):
+            log.info("Training abandoned: document deleted", doc_id=doc_id)
+            return
         await _ensure_chunk_metadata_columns(db)
         await _ensure_documents_row(db, doc)
         await _clear_previous_index(db, doc_id)
@@ -205,6 +236,13 @@ async def train_workspace_document(
                 "filename": doc["filename"],
             },
         )
+
+        # A deletion can race the index write. If the owning row vanished while
+        # index_chunks ran, remove the rows it just inserted and stop.
+        if not await _workspace_document_exists(db, doc_id):
+            await _remove_index_for_document(db, doc_id)
+            log.info("Training abandoned after deletion", doc_id=doc_id)
+            return
 
         # 6. Mark ready
         await _set_status(db, doc_id, "ready", chunk_count=len(chunk_ids))

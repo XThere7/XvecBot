@@ -153,7 +153,80 @@ async def delete_workspace(
         ) as cur:
             doc_rows = [dict(r) for r in await cur.fetchall()]
 
+        async with db.execute(
+            "SELECT id FROM agents WHERE workspace_id = ?",
+            (workspace_id,),
+        ) as cur:
+            agent_ids = [r["id"] for r in await cur.fetchall()]
+
+        # Delete the vector index first: it resolves chunk ids while the
+        # chunk/document rows still exist. Then remove every row owned by this
+        # workspace explicitly instead of depending on SQLite cascade quirks
+        # (the agent_id column was added to pre-existing databases by ALTER).
         await vector_store.delete_by_workspace(db, workspace_id)
+
+        await db.execute(
+            """DELETE FROM chunks
+               WHERE workspace_id = ?
+                  OR doc_id IN (
+                      SELECT id FROM workspace_documents WHERE workspace_id = ?
+                  )
+                  OR document_id IN (
+                      SELECT id FROM workspace_documents WHERE workspace_id = ?
+                  )""",
+            (workspace_id, workspace_id, workspace_id),
+        )
+        await db.execute(
+            """DELETE FROM documents
+               WHERE id IN (
+                   SELECT id FROM workspace_documents WHERE workspace_id = ?
+               )""",
+            (workspace_id,),
+        )
+        await db.execute(
+            """DELETE FROM messages
+               WHERE conversation_id IN (
+                   SELECT id FROM conversations
+                   WHERE agent_id IN (
+                       SELECT id FROM agents WHERE workspace_id = ?
+                   )
+               )""",
+            (workspace_id,),
+        )
+        await db.execute(
+            """DELETE FROM conversations
+               WHERE agent_id IN (
+                   SELECT id FROM agents WHERE workspace_id = ?
+               )""",
+            (workspace_id,),
+        )
+        # Transcripts that are not agent-linked but quote this workspace's
+        # documents (legacy /api/v1/query) carry the workspace id directly.
+        await db.execute(
+            """DELETE FROM messages
+               WHERE conversation_id IN (
+                   SELECT id FROM conversations WHERE workspace_id = ?
+               )""",
+            (workspace_id,),
+        )
+        await db.execute(
+            "DELETE FROM conversations WHERE workspace_id = ?",
+            (workspace_id,),
+        )
+        await db.execute(
+            """DELETE FROM agent_embed_tokens
+               WHERE agent_id IN (
+                   SELECT id FROM agents WHERE workspace_id = ?
+               )""",
+            (workspace_id,),
+        )
+        await db.execute(
+            "DELETE FROM developer_api_keys WHERE workspace_id = ?",
+            (workspace_id,),
+        )
+        await db.execute(
+            "DELETE FROM agents WHERE workspace_id = ?", (workspace_id,)
+        )
         await db.execute(
             "DELETE FROM workspace_documents WHERE workspace_id = ?", (workspace_id,)
         )
@@ -178,6 +251,21 @@ async def delete_workspace(
                 workspace_id=workspace_id,
                 error=str(exc),
             )
+    # Remove the per-workspace upload directory once its files are gone
+    # (best-effort: rmdir only succeeds when empty, so unknown extra files
+    # are never destroyed).
+    try:
+        (settings.workspace_upload_path / workspace_id).rmdir()
+    except OSError:
+        pass
+    for agent_id in agent_ids:
+        try:
+            shutil.rmtree(
+                settings.workspace_upload_path / "icons" / agent_id,
+                ignore_errors=True,
+            )
+        except Exception:
+            pass
     if settings.use_s3_storage:
         # Prefix sweep catches objects outside the per-row keys (defensive).
         try:

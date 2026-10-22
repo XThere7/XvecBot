@@ -7,6 +7,7 @@ The API layer calls this service and stays thin — no business logic in endpoin
 """
 import asyncio
 from pathlib import Path
+from typing import Optional
 
 import aiosqlite
 
@@ -57,6 +58,8 @@ async def ingest_document(
         filename=original_filename,
         total_pages=0,   # updated after PDF load
         file_size=file_size,
+        # Remember where the bytes live so a delete can remove them.
+        file_path=str(file_path),
     )
 
     try:
@@ -119,12 +122,34 @@ async def delete_document_with_data(
     Delete a document and all associated chunks/embeddings.
     Returns True if deleted, False if not found.
     """
+    from pathlib import Path
+
     from ..storage.vector_store import delete_embeddings_for_document
+
+    # Read the row first: the file path is needed after the row is gone.
+    stored_path: Optional[str] = None
+    try:
+        async with db.execute(
+            "SELECT file_path FROM documents WHERE id = ?", (doc_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        if row is not None:
+            stored_path = row["file_path"] if "file_path" in row.keys() else None
+    except Exception:
+        stored_path = None
 
     # Embeddings first (FK constraint)
     await delete_embeddings_for_document(db, doc_id)
     # Chunks + document cascade via FK ON DELETE CASCADE
     deleted = await db_ops.delete_document(db, doc_id)
     if deleted:
+        # Remove the uploaded bytes as well — otherwise the file stays on the
+        # upload volume forever (orphan bytes + customer data kept after a
+        # delete).
+        if stored_path:
+            try:
+                Path(stored_path).unlink(missing_ok=True)
+            except OSError as exc:
+                log.warning("Document file cleanup failed", doc_id=doc_id, error=str(exc))
         log.info("Document deleted", doc_id=doc_id)
     return deleted

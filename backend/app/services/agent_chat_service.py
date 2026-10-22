@@ -130,7 +130,9 @@ async def chat_with_agent(
     # 2. Resolve or create the conversation
     is_new = conversation_id is None
     if is_new:
-        conversation = await conversation_service.create_conversation(db, agent_id)
+        conversation = await conversation_service.create_conversation(
+            db, agent_id, workspace_id=workspace_id
+        )
         conversation_id = conversation["id"]
     else:
         conversation = await conversation_service.get_conversation(db, conversation_id)

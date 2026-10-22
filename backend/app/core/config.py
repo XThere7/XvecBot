@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
     app_public_url: str = "https://yourplatform.com"
+    # Base URL of the hosted chat pages (Method B): <base>/chat/<embed-token>.
+    # Used both to generate shareable links and to auto-permit that origin for
+    # widget calls, so merchants never have to allowlist the platform's own
+    # dashboard domain on top of their customer sites.
+    hosted_base_url: str = "https://app.botbase.tz"
     # Point customer snippets at the minified bundle built by
     # scripts/build_widget.py. Set false to hand out the readable source.
     widget_minified: bool = True

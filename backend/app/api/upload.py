@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
+from ..core.uploads import UploadTooLarge, atomic_replace, save_upload_limited
 from ..models.document import DocumentList, DocumentRead, UploadResponse
 from ..services.document_service import delete_document_with_data, ingest_document
 from ..storage import sqlite as db_ops
@@ -21,8 +22,6 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
-MAX_FILE_SIZE_MB = 50
-MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 
 @router.post(
@@ -54,19 +53,23 @@ async def upload_document(
             detail=f"Only PDF files are accepted. Got: {file.content_type}",
         )
 
-    # Read file content to check size
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum size of {MAX_FILE_SIZE_MB}MB.",
-        )
-
-    # Save to uploads directory with a unique name (sanitize filename)
+    # Stream to disk with the configured cap. Never call file.read() here: a
+    # 50 MB cap must not become a 50 MB (or larger) allocation in the process.
     safe_original = Path(original_filename).name  # strip any path components
     safe_name = f"{uuid.uuid4()}_{safe_original}"
     save_path = settings.upload_path / safe_name
-    save_path.write_bytes(content)
+    temp_path = save_path.with_name(f".{save_path.name}.part")
+    try:
+        await save_upload_limited(file, temp_path, settings.max_upload_bytes)
+    except UploadTooLarge as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                "File exceeds maximum size of "
+                f"{settings.max_upload_bytes // (1024 * 1024)}MB."
+            ),
+        ) from exc
+    atomic_replace(temp_path, save_path)
 
     log.info("File saved", filename=safe_original, path=str(save_path))
 
@@ -93,6 +96,11 @@ async def upload_document(
         )
 
 
+@router.get(
+    "",
+    response_model=DocumentList,
+    include_in_schema=False,
+)
 @router.get(
     "/",
     response_model=DocumentList,

@@ -4,6 +4,7 @@ Agent CRUD and conversation history — thin routing layer.
 All logic lives in services/agent_service.py and services/conversation_service.py.
 Every route is scoped to the authenticated owner of the workspace.
 """
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,7 +110,7 @@ async def get_agent(
     user: dict = Depends(get_current_user),
 ):
     async with get_db() as db:
-        return await agent_service.get_agent(db, agent_id, user["id"])
+        return await _require_owned_agent(db, workspace_id, agent_id, user)
 
 
 @router.put(
@@ -124,6 +125,7 @@ async def update_agent(
 ):
     updates = payload.model_dump(exclude_unset=True)
     async with get_db() as db:
+        await _require_owned_agent(db, workspace_id, agent_id, user)
         return await agent_service.update_agent(
             db, agent_id, user["id"], **updates
         )
@@ -140,7 +142,14 @@ async def delete_agent(
     user: dict = Depends(get_current_user),
 ):
     async with get_db() as db:
+        await _require_owned_agent(db, workspace_id, agent_id, user)
         await agent_service.delete_agent(db, agent_id, user["id"])
+    # Best effort: the DB delete is authoritative; an orphaned avatar must not
+    # turn a successful deletion into a 500.
+    try:
+        shutil.rmtree(_icons_root() / agent_id, ignore_errors=True)
+    except Exception as exc:
+        log.warning("Agent icon cleanup failed", agent_id=agent_id, error=str(exc))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -323,7 +332,9 @@ async def upload_icon(
                 detail="Only PNG, JPG, WebP, and GIF images are allowed.",
             )
 
-        content = await file.read()
+        # Read one byte past the cap rather than buffering the entire upload;
+        # an authenticated caller must not be able to exhaust process memory.
+        content = await file.read(ICON_MAX_BYTES + 1)
         if len(content) > ICON_MAX_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
