@@ -24,6 +24,10 @@ from ..services import admin_service, email_service
 from ..services.password_reset_service import reset_rate_limit_state
 
 SECRET_PATTERNS = ("$2b$", "password_hash", "token_hash", "key_hash", "totp_secret")
+# A complete developer API key (sk-botbase- + 40 hex characters). The
+# 12-character display prefix that the admin panel is allowed to show is
+# not a secret and must not trip this check.
+FULL_API_KEY_RE = re.compile(r"sk-botbase-[0-9a-f]{40}")
 
 
 @pytest.fixture(autouse=True)
@@ -566,7 +570,10 @@ async def test_secret_leakage_crawl(test_client):
                 continue  # CSV export — inspected separately
             for pattern in SECRET_PATTERNS:
                 assert pattern not in payload, (path, pattern)
-            assert "sk-botbase-" not in payload
+            # A full developer key is sk-botbase-{40 hex}. The admin panel is
+            # allowed to show the 12-character display prefix (that is what
+            # key_prefix is for) but never the whole secret.
+            assert not FULL_API_KEY_RE.search(payload), (path, "full developer key")
             checked += 1
     assert checked >= 8, f"only {checked} GET endpoints crawled"
 
