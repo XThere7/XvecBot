@@ -4,7 +4,7 @@
 # Runs, in order:
 #   1. the full pytest suite against SQLite (default engine)
 #   2. the full pytest suite against a real PostgreSQL + pgvector
-#   3. Alembic migrations against PostgreSQL (head = 0004_developer_api_keys)
+#   3. Alembic migrations against PostgreSQL (head = 0007_website_knowledge)
 #   4. the full customer-journey E2E against a Postgres-backed API
 #   5. (optional) the presigned object-storage E2E when an S3 endpoint is set
 #

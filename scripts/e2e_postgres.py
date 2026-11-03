@@ -110,12 +110,162 @@ async def main():
         check(r.status_code == 200 and "access_token" in r.json(), "login returns a token")
         check(r.json()["user_id"] == user_id, "login returns the same user")
 
+        # ── registration trial ─────────────────────────────────────────────
+        r = await c.get("/auth/me", headers=headers)
+        me = r.json()
+        check(
+            r.status_code == 200
+            and me["plan"]["base"] == "free"
+            and me["plan"]["effective"] == "trial"
+            and me["plan"]["is_trial"] is True,
+            "new account starts on a trial with a Free base plan",
+            r.text[:200],
+        )
+        check(
+            me["plan"]["days_remaining"] in (20, 21)
+            and me["limits"]["agents"] is None
+            and me["limits"]["chat_messages"] is None,
+            "trial grants Pro-equivalent limits for 21 days",
+            json.dumps(me.get("plan")),
+        )
+
         # ── workspace ──────────────────────────────────────────────────────
         r = await c.post(
             "/workspaces", json={"name": "Stage 1 QA", "description": "postgres"}, headers=headers
         )
         check(r.status_code in (200, 201), "workspace created", r.text[:200])
         ws = r.json()["id"]
+
+        # ── public plan catalogue ──────────────────────────────────────────
+        r = await c.get("/plans")
+        catalogue = r.json()
+        plans = {p["id"]: p for p in (catalogue.get("plans") or [])}
+        check(r.status_code == 200 and set(plans) == {"free", "standard", "pro"},
+              "public catalogue exposes exactly three plans", r.text[:200])
+        check(
+            plans["free"]["price_tzs"] == 0
+            and plans["standard"]["price_tzs"] == 7_800
+            and plans["pro"]["price_tzs"] == 15_800,
+            "plan prices are Free 0, Standard 7,800 and Pro 15,800 TZS",
+        )
+        free_limits = plans["free"]["limits"]
+        check(
+            free_limits["agents"] == 1
+            and free_limits["documents"] == 5
+            and free_limits["pages_indexed"] == 50
+            and free_limits["website_sources"] == 1
+            and free_limits["website_refresh"] == "manual"
+            and free_limits["api_keys"] == 0
+            and free_limits["chat_messages"] == 100
+            and free_limits["embed_tokens"] == 1,
+            "Free limits match the approved launch strategy",
+            json.dumps(free_limits),
+        )
+        standard_limits = plans["standard"]["limits"]
+        check(
+            standard_limits["agents"] == 5
+            and standard_limits["documents"] == 50
+            and standard_limits["pages_indexed"] == 500
+            and standard_limits["website_sources"] == 5
+            and standard_limits["website_refresh"] == "weekly"
+            and standard_limits["api_keys"] == 3
+            and standard_limits["chat_messages"] == 5_000
+            and standard_limits["embed_tokens"] == 5,
+            "Standard limits match the approved launch strategy",
+            json.dumps(standard_limits),
+        )
+        pro_limits = plans["pro"]["limits"]
+        check(
+            all(
+                pro_limits[key] is None
+                for key in (
+                    "agents",
+                    "documents",
+                    "pages_indexed",
+                    "website_sources",
+                    "api_keys",
+                    "chat_messages",
+                    "embed_tokens",
+                )
+            )
+            and pro_limits["website_refresh"] == "daily",
+            "Pro limits are unlimited with daily refresh",
+            json.dumps(pro_limits),
+        )
+        check(catalogue["trial"]["duration_days"] == 21,
+              "public catalogue advertises the 21-day trial")
+        check(catalogue["payments_configured"] is False,
+              "public catalogue reports payments are not configured")
+
+        # ── trial billing view, then expire the trial for Free gates ───────
+        r = await c.get(f"/workspaces/{ws}/billing", headers=headers)
+        billing = r.json()
+        check(
+            r.status_code == 200
+            and billing["plan"]["id"] == "pro"
+            and billing["is_trial"] is True
+            and billing["base_plan"] == "free",
+            "trial workspace bills as Pro with a Free base",
+            r.text[:200],
+        )
+        check(bool(billing["usage"]["chat_messages"]["resets_at"]),
+              "billing exposes the monthly chat reset date")
+
+        conn = await asyncpg.connect(DSN)
+        try:
+            await conn.execute(
+                "UPDATE users SET trial_ends_at = '2000-01-01T00:00:00+00:00' "
+                "WHERE id = $1",
+                user_id,
+            )
+        finally:
+            await conn.close()
+
+        r = await c.get(f"/workspaces/{ws}/billing", headers=headers)
+        billing = r.json()
+        check(
+            r.status_code == 200
+            and billing["plan"]["id"] == "free"
+            and billing["is_trial"] is False,
+            "expired trial drops the account to Free",
+            r.text[:200],
+        )
+        check(billing["payments_configured"] is False,
+              "billing reports payments are not configured")
+
+        # Developer API is a Standard/Pro entitlement and is locked on Free.
+        r = await c.post(
+            f"/workspaces/{ws}/api-keys", json={"name": "locked key"}, headers=headers
+        )
+        check(r.status_code == 403, "Free cannot create developer API keys", r.text[:200])
+        detail = (r.json().get("detail") or {})
+        check(
+            detail.get("code") == "plan_limit_reached"
+            and detail.get("resource") == "api_keys"
+            and detail.get("limit") == 0,
+            "locked developer key returns a structured plan error",
+            r.text[:200],
+        )
+
+        # The Free gates above are proven. Move this disposable workspace to
+        # Pro before the rest of the journey so two embed tokens and the
+        # developer API are exercised under the paid entitlement.
+        conn = await asyncpg.connect(DSN)
+        try:
+            await conn.execute(
+                "UPDATE workspaces SET plan = 'pro', plan_started_at = now()::text "
+                "WHERE id = $1",
+                ws,
+            )
+        finally:
+            await conn.close()
+
+        r = await c.get(f"/workspaces/{ws}/billing", headers=headers)
+        check(
+            r.status_code == 200 and r.json()["plan"]["id"] == "pro",
+            "operator upgrade to Pro is reflected in billing",
+            r.text[:200],
+        )
 
         r = await c.get("/workspaces", headers=headers)
         check(any(w["id"] == ws for w in r.json()), "workspace appears in the list")
@@ -229,6 +379,20 @@ async def main():
         )
         check(r.status_code == 200, "workspace chat works", r.text[:300])
 
+        r = await c.get(f"/workspaces/{ws}/billing", headers=headers)
+        usage = r.json().get("usage") or {}
+        check(
+            (usage.get("chat_messages") or {}).get("used", 0) >= 3,
+            "account chat usage counts every chat surface",
+            json.dumps(usage.get("chat_messages")),
+        )
+        check(
+            (usage.get("documents") or {}).get("used") == 1
+            and (usage.get("agents") or {}).get("used") == 1,
+            "billing usage reports documents and agents",
+            json.dumps(usage),
+        )
+
         # ── embed token + hosted page links ────────────────────────────────
         r = await c.post(
             f"/workspaces/{ws}/agents/{agent}/tokens",
@@ -326,6 +490,23 @@ async def main():
         check(bool(legacy_body.get("conversation_id")), "legacy query returned a conversation id")
 
         # ── developer API keys ─────────────────────────────────────────────
+        # Operator upgrade: developer access is Pro-only, and the public API
+        # deliberately has no self-service paid upgrade while payments are not
+        # configured. Simulate the operator moving this workspace to Pro.
+        conn = await asyncpg.connect(DSN)
+        try:
+            await conn.execute(
+                "UPDATE workspaces SET plan = 'pro', plan_started_at = now()::text "
+                "WHERE id = $1",
+                ws,
+            )
+        finally:
+            await conn.close()
+
+        r = await c.get(f"/workspaces/{ws}/billing", headers=headers)
+        check(r.status_code == 200 and r.json()["plan"]["id"] == "pro",
+              "operator upgrade to Pro is reflected in billing", r.text[:200])
+
         r = await c.post(
             f"/workspaces/{ws}/api-keys", json={"name": "Stage 1 key"}, headers=headers
         )
@@ -391,6 +572,10 @@ async def main():
                 "agents",
                 "agent_embed_tokens",
                 "developer_api_keys",
+                "usage_events",
+                "website_sync_jobs",
+                "website_pages",
+                "website_sources",
             ):
                 leftovers[table] = await conn.fetchval(f"SELECT count(*) FROM {table}")
             total = sum(leftovers.values())

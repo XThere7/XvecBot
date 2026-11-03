@@ -88,6 +88,31 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS to your dashboard origin}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL to your API base URL}
       HOSTED_BASE_URL: ${HOSTED_BASE_URL:?set HOSTED_BASE_URL to your dashboard origin}
+      # Transactional email. In production this must be "smtp": with the
+      # "file" backend a password-reset mail is written into the container
+      # and never reaches the customer.
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-BotBase}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      DOCS_URL: ${DOCS_URL:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:-30}
+      PASSWORD_RESET_MAX_PER_EMAIL_PER_HOUR: ${PASSWORD_RESET_MAX_PER_EMAIL_PER_HOUR:-5}
+      PASSWORD_RESET_MAX_PER_IP_PER_HOUR: ${PASSWORD_RESET_MAX_PER_IP_PER_HOUR:-20}
+      # Admin panel. ADMIN_ROUTE_PREFIX must match the dashboard route.
+      ADMIN_ROUTE_PREFIX: ${ADMIN_ROUTE_PREFIX:-/bbx765adm}
+      ADMIN_SESSION_EXPIRE_HOURS: ${ADMIN_SESSION_EXPIRE_HOURS:-8}
+      USAGE_EVENTS_RETENTION_DAYS: ${USAGE_EVENTS_RETENTION_DAYS:-90}
+      # Plans. "free" in production — the 21-day trial is an effective access
+      # state on top of the stored plan, not a plan of its own.
+      DEFAULT_WORKSPACE_PLAN: ${DEFAULT_WORKSPACE_PLAN:-free}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-auto}
       S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET for durable production uploads}
       S3_PREFIX: ${S3_PREFIX:-botbase}
@@ -158,6 +183,7 @@ services:
       - "443:443/udp"
     environment:
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN to the API hostname, e.g. api.yourdomain.com}
+      ACME_EMAIL: ${ACME_EMAIL:-ops@yourdomain.com}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

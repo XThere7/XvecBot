@@ -2,7 +2,8 @@
 
 Everything needed to run the production stack on one cheap VPS
 (Hetzner CX22 ≈ €4/month) with PostgreSQL + pgvector, the API, Caddy for
-TLS, and the dashboard on Vercel.
+TLS, and the dashboard (landing, pricing, docs, dashboard, hosted chat and
+the admin panel) on Vercel. Transactional email goes out through Resend.
 
 The long-form version of this (architecture, costs, alternatives, growth
 path) is in `production.md` at the repository root.
@@ -64,7 +65,15 @@ curl -fsS http://localhost/health/ready     # through Caddy
 | Record | Points to | Cloudflare mode |
 |---|---|---|
 | `api.<domain>` | the VPS IP | **DNS-only (grey cloud)** |
-| `app.<domain>` | Vercel (dashboard) | proxied or DNS-only, Vercel issues its own cert |
+| `www.<domain>` | Vercel (dashboard) | proxied or DNS-only, Vercel issues its own cert |
+| `<domain>` (apex) | Vercel | redirect to `www` (set it in Vercel) |
+| `app.<domain>` | Vercel | optional redirect to `www` |
+
+One origin serves the whole web app: `ALLOWED_ORIGINS`,
+`HOSTED_BASE_URL` and `NEXT_PUBLIC_SITE_URL` must all be exactly
+`https://www.<domain>`. `APP_PUBLIC_URL` is the API origin
+(`https://api.<domain>`) — different on purpose, and the preflight script
+fails if they are the same.
 
 > **Keep `api.<domain>` grey.** With Cloudflare's proxy on, Caddy would see
 > a Cloudflare edge IP instead of the visitor's, and every visitor would
@@ -81,7 +90,7 @@ redeploy (they are compiled into the browser bundle):
 ```
 NEXT_PUBLIC_API_BASE_URL=https://api.<domain>
 NEXT_PUBLIC_APP_NAME=BotBase
-NEXT_PUBLIC_SITE_URL=https://app.<domain>
+NEXT_PUBLIC_SITE_URL=https://www.<domain>
 ```
 
 Root directory = `BaseBot_UI`, framework = Next.js, build = `npm run build`.
@@ -101,7 +110,59 @@ seconds. Downtime is 30–90 seconds.
 
 The dashboard updates separately: push to GitHub and Vercel redeploys.
 
-## 6. Backups
+## 6. Transactional email (Resend)
+
+Password reset, the welcome mail and admin invites all leave the box over
+SMTP. With the default `EMAIL_BACKEND=file` they are written into the
+container and never delivered.
+
+1. In Resend: add and verify the sending domain, then add the SPF, DKIM and
+   DMARC records it gives you at the DNS provider.
+2. In `/opt/botbase/.env`:
+
+```bash
+EMAIL_BACKEND=smtp
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USERNAME=resend
+SMTP_PASSWORD=<resend api key>
+SMTP_SECURITY=starttls
+EMAIL_FROM_ADDRESS=no-reply@<domain>
+EMAIL_FROM_NAME=BotBase
+EMAIL_REPLY_TO=support@<domain>
+SUPPORT_EMAIL=support@<domain>
+FRONTEND_URL=https://www.<domain>
+DOCS_URL=https://www.<domain>/docs
+```
+
+3. Restart the API and send yourself a reset mail:
+
+```bash
+docker compose --env-file /opt/botbase/.env -f docker/compose.prod.yml \
+  restart backend
+```
+
+Resend is send-only: `support@<domain>` must be a real mailbox you read
+(a free Zoho or Google mailbox is fine).
+
+## 7. The admin panel
+
+The superadmin role can only be granted from the CLI:
+
+```bash
+docker compose --env-file /opt/botbase/.env -f docker/compose.prod.yml \
+  exec -w /app/backend backend python -m app.scripts.create_master_admin \
+  --email founder@<domain>
+```
+
+Then sign in at `https://www.<domain>/bbx765adm`, enrol TOTP and store the
+recovery codes. TOTP seeds are encrypted with `SECRET_KEY` — **rotating
+`SECRET_KEY` later invalidates every enrolled authenticator**.
+
+The panel path is obfuscated, not secret. Put it behind Cloudflare Access
+(or a WAF rule) for `/bbx765adm*` on both `www` and `api`.
+
+## 8. Backups
 
 ```bash
 # one backup now
@@ -118,7 +179,7 @@ lifecycle rule to expire `backups/pg/` after 14 days.
 **Restore procedure:** `deploy/restore.md`. Run the practice restore at least
 once before you have real customers.
 
-## 7. Monitoring
+## 9. Monitoring
 
 - `docker compose ps` shows the health of every service.
 - The compose healthchecks are what `depends_on` and the load balancer use.
@@ -128,7 +189,7 @@ once before you have real customers.
   logs). Log rotation is configured in the compose file (10 MB × 3 per
   service).
 
-## 8. Cost control
+## 10. Cost control
 
 | Item | Cost |
 |---|---|
@@ -138,8 +199,10 @@ once before you have real customers.
 | Cloudflare DNS | €0 |
 | OpenRouter free models | €0 (set a $5 spend cap) |
 | Domain | ~$10–40/year |
+| Resend (transactional email, 3,000/mo free) | $0 |
+| Support mailbox | $0–1/month |
 
-## 9. Incident cheat sheet
+## 11. Incident cheat sheet
 
 | Symptom | Action |
 |---|---|
@@ -148,11 +211,15 @@ once before you have real customers.
 | Uploads fail in the browser (CORS) | the R2 bucket CORS must allow `PUT, GET, HEAD` from the dashboard origin |
 | Everybody hits 429 | the client IP is not reaching the app: check the DNS record is grey and that uvicorn runs with `--proxy-headers` |
 | Chat returns 401/402 | OpenRouter key invalid or out of credit |
+| No password-reset mail arrives | `EMAIL_BACKEND` is not `smtp`, or the SMTP credentials are wrong: `compose logs backend` shows the delivery error |
+| Password-reset mail lands in spam | SPF/DKIM/DMARC records missing or wrong for the sending domain |
+| The pricing page says "We could not load the plans" | the API and the frontend disagree about the plans payload — check `GET /billing/plans` matches `backend/app/core/plan.py` |
+| Nobody can sign in to the admin panel | TOTP was enrolled before `SECRET_KEY` was finalised, or the recovery codes were lost |
 | Disk > 80% | `docker system prune -a` (images only) · old backups in R2 |
 | A bad release | `deploy/update.sh` rolls back automatically; manually: `docker tag botbase-backend:prev <image>` + `compose up -d --no-deps backend` |
 | Need a restore | `deploy/restore.md` |
 
-## 10. Local development against the same stack
+## 12. Local development against the same stack
 
 ```bash
 # Postgres + pgvector on your own machine (no Docker needed)
