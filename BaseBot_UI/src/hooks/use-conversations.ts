@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiRequestError, apiDelete, apiGet, apiPost } from "@/lib/api-client";
 import { QUERY_STALE_TIME_MS } from "@/lib/constants";
 import { agentKeys } from "./use-agents";
+import { billingKeys } from "./use-billing";
 import {
   agentChatResponseSchema,
   conversationListSchema,
@@ -78,6 +79,8 @@ export function useCreateConversation(wsId: string, agentId: string) {
  * is stored immediately on success and never cleared by an error.
  */
 export function useAgentChat(wsId: string, agentId: string) {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async (input: {
       message: string;
@@ -91,6 +94,13 @@ export function useAgentChat(wsId: string, agentId: string) {
         body,
       );
       return agentChatResponseSchema.parse(response);
+    },
+    onSuccess: () => {
+      // A successful answer consumes one response — refresh the Plan tab and
+      // the chat panel's own limit banner.
+      void queryClient.invalidateQueries({
+        queryKey: billingKeys.workspace(wsId),
+      });
     },
   });
 }

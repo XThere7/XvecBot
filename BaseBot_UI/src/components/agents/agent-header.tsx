@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Link2, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { TabNav } from "@/components/common/tab-nav";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ import { useAgent, useDeleteAgent, useToggleAgentActive } from "@/hooks/use-agen
 
 const TABS: { id: AgentTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "media", label: "Media" },
   { id: "test", label: "Test" },
   { id: "conversations", label: "Conversations" },
   { id: "embed", label: "Embed" },
@@ -108,9 +109,7 @@ export function AgentHeader({
             <>
               <ActiveBadge active={isActive} />
               <Badge tone="neutral">{agent.language}</Badge>
-              <Badge tone="neutral" title={agent.model}>
-                {modelLabel(agent.model)}
-              </Badge>
+              <Badge tone="neutral">{modelLabel(agent.model)}</Badge>
             </>
           ) : undefined
         }
@@ -120,7 +119,17 @@ export function AgentHeader({
               <Button asChild variant="secondary" size="sm">
                 <Link href={workspaceHref(wsId, "agents")}>All agents</Link>
               </Button>
-              <Tooltip content="Permanently deletes this agent, its conversations and its embed tokens.">
+              <Button
+                asChild
+                variant="secondary"
+                size="sm"
+                iconLeft={<Link2 aria-hidden className="h-4 w-4" />}
+              >
+                <Link href={`${agentHref(wsId, agentId, "media")}&add=1`}>
+                  Add media link
+                </Link>
+              </Button>
+              <Tooltip content="Permanently deletes this agent, its conversations, imported media and embed tokens.">
                 <Button
                   variant="dangerGhost"
                   size="sm"
@@ -182,9 +191,9 @@ export function AgentHeader({
           <p>
             This permanently deletes{" "}
             <strong className="font-medium text-primary">{agent?.name}</strong>,
-            all of its conversations, and all of its embed tokens. Any website
-            still using those tokens will stop working immediately. This cannot
-            be undone.
+            all of its conversations, imported media and embed tokens. Any
+            website still using those tokens will stop working immediately.
+            This cannot be undone.
           </p>
         }
         confirmLabel="Delete agent"

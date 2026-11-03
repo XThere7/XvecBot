@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { MessageSquarePlus } from "lucide-react";
 import { ChatInput } from "./chat-input";
 import { ChatMessageBubble, type ChatMessage } from "./chat-message-bubble";
@@ -10,8 +11,12 @@ import { Button } from "@/components/ui/button";
 import { ErrorPanel } from "@/components/common/error-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STARTER_QUESTIONS } from "@/lib/reference-data";
+import { parseApiDate } from "@/lib/format";
+import { workspaceHref } from "@/lib/routes";
 import { chatErrorMessage, useAgentChat, useCreateConversation } from "@/hooks/use-conversations";
 import { useAgent } from "@/hooks/use-agents";
+import { planLimitFromError, useBilling } from "@/hooks/use-billing";
+import type { PlanLimitDetail } from "@/types/api";
 
 /** PREMIUM MOMENT 5 — lazily loaded panel entrance. */
 const BlurFade = dynamic(
@@ -27,12 +32,14 @@ const WELCOME_FALLBACK = "Hi! Ask me anything about this business.";
  */
 export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) {
   const agentQuery = useAgent(wsId, agentId);
+  const billing = useBilling(wsId);
   const sendMessage = useAgentChat(wsId, agentId);
   const newConversation = useCreateConversation(wsId, agentId);
 
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [draft, setDraft] = React.useState("");
   const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const [planLimit, setPlanLimit] = React.useState<PlanLimitDetail | null>(null);
   const [failedMessage, setFailedMessage] = React.useState<{
     text: string;
     message: string;
@@ -44,6 +51,37 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
   // Agent.is_active is the integer 0 | 1.
   const isActive = Boolean(agent?.is_active);
   const welcome = agent?.welcome_message ?? WELCOME_FALLBACK;
+
+  const responseUsage = billing.data?.usage.chat_messages;
+  const quotaExhausted =
+    responseUsage?.limit !== null &&
+    responseUsage !== undefined &&
+    responseUsage.used >= responseUsage.limit;
+  const resetDate = responseUsage?.resets_at
+    ? (() => {
+        const date = parseApiDate(responseUsage.resets_at);
+        return date
+          ? new Intl.DateTimeFormat("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              // The allowance is a UTC calendar month; keep the displayed
+              // reset date on the same boundary as the backend.
+              timeZone: "UTC",
+            }).format(date)
+          : null;
+      })()
+    : null;
+  const limitMessage =
+    planLimit?.message ??
+    (quotaExhausted && responseUsage?.limit !== null && responseUsage
+      ? `You have used all ${(responseUsage.limit ?? 0).toLocaleString(
+          "en-US",
+        )} chat messages on the ${billing.data?.plan.name ?? "current"} plan this month. The allowance resets on ${
+          resetDate ?? "the first of next month"
+        }. No charge is made automatically — your documents, agents and conversation history stay available.`
+      : null);
+  const sendDisabled = sendMessage.isPending || !isActive || Boolean(limitMessage);
 
   React.useEffect(() => {
     const node = logRef.current;
@@ -71,6 +109,7 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
       });
       // Store immediately: turn 2 must reuse the same conversation.
       setConversationId(response.conversation_id);
+      setPlanLimit(null);
       setMessages((current) => [
         ...current,
         {
@@ -83,6 +122,16 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
         },
       ]);
     } catch (error) {
+      // A quota error means the backend never wrote the turn — remove the
+      // optimistic bubble and show one clear upgrade banner instead.
+      const limit = planLimitFromError(error);
+      if (limit) {
+        setPlanLimit(limit);
+        setMessages((current) =>
+          current.filter((message) => message.id !== userMessage.id),
+        );
+        return;
+      }
       // An error never clears conversationId.
       setFailedMessage({
         text: trimmed,
@@ -96,6 +145,7 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
     setMessages([]);
     setDraft("");
     setFailedMessage(null);
+    setPlanLimit(null);
     try {
       const conversation = await newConversation.mutateAsync();
       setConversationId(conversation.id);
@@ -143,6 +193,24 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
             <AlertBanner tone="warning">
               This agent is inactive. Activate it to test — a live widget would
               also return 403 while it is off.
+            </AlertBanner>
+          </div>
+        )}
+
+        {limitMessage && (
+          <div className="border-b border-subtle p-3">
+            <AlertBanner
+              tone="warning"
+              title="Monthly response limit reached"
+              action={
+                <Button asChild variant="secondary" size="sm">
+                  <Link href={workspaceHref(wsId, "billing")}>
+                    View plan &amp; usage
+                  </Link>
+                </Button>
+              }
+            >
+              {limitMessage}
             </AlertBanner>
           </div>
         )}
@@ -206,11 +274,13 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
             value={draft}
             onChange={setDraft}
             onSend={() => void send(draft)}
-            disabled={sendMessage.isPending || !isActive}
+            disabled={sendDisabled}
             placeholder={
-              isActive
-                ? "Ask a question about your documents…"
-                : "Activate this agent to test it"
+              limitMessage
+                ? "Monthly response limit reached — view plan & usage"
+                : isActive
+                  ? "Ask a question about your documents…"
+                  : "Activate this agent to test it"
             }
           />
         </footer>

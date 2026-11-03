@@ -38,8 +38,8 @@ export default function AccountSecurityPage() {
         <p className="mt-4 text-xs leading-5 text-tertiary">
           Any variable prefixed{" "}
           <code className="font-mono">NEXT_PUBLIC_</code> is compiled into the
-          client bundle and is publicly readable. Backend secrets — the
-          OpenRouter key, the JWT secret — must never be placed there.
+          client bundle and is publicly readable. Backend secrets — the AI
+          provider key, the JWT secret — must never be placed there.
         </p>
       </section>
     </div>

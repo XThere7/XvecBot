@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api-client";
 import { QUERY_STALE_TIME_MS } from "@/lib/constants";
 import { workspaceKeys } from "./use-workspaces";
+import { billingKeys } from "./use-billing";
 import { agentListSchema, agentSchemaApi } from "@/schemas/agent";
 import type { Agent } from "@/types/api";
 
@@ -65,6 +66,9 @@ export function useCreateAgent(wsId: string) {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: agentKeys.list(wsId) });
+      void queryClient.invalidateQueries({
+        queryKey: billingKeys.workspace(wsId),
+      });
     },
   });
 }
@@ -121,6 +125,9 @@ export function useDeleteAgent(wsId: string) {
     onSuccess: (_data, agentId) => {
       queryClient.removeQueries({ queryKey: agentKeys.detail(wsId, agentId) });
       void queryClient.invalidateQueries({ queryKey: agentKeys.list(wsId) });
+      void queryClient.invalidateQueries({
+        queryKey: billingKeys.workspace(wsId),
+      });
     },
   });
 }

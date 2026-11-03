@@ -6,6 +6,14 @@ export const TRAINING_POLL_INTERVAL_MS = 3000;
 /** Hard cap so we never poll forever. */
 export const TRAINING_POLL_CAP_MS = 10 * 60 * 1000;
 
+/** Website crawls are slow and only the source row carries terminal state. */
+export const WEBSITE_SYNC_POLL_INTERVAL_MS = 3000;
+
+/** Public social metadata extraction and indexing are also in-process jobs. */
+export const MEDIA_SYNC_POLL_INTERVAL_MS = 3000;
+export const MAX_MEDIA_CONTENT_CHARS = 20_000;
+export const MAX_MEDIA_TRANSCRIPT_BYTES = 200 * 1024;
+
 export const MAX_MESSAGE_LENGTH = 4000;
 export const MESSAGE_COUNTER_WARN = 3800;
 

@@ -71,9 +71,7 @@ export function AgentCard({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <ActiveBadge active={isActive} />
         <Badge tone="neutral">{agent.language}</Badge>
-        <Badge tone="neutral" title={agent.model}>
-          {modelLabel(agent.model)}
-        </Badge>
+        <Badge tone="neutral">{modelLabel(agent.model)}</Badge>
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-2 pt-5">

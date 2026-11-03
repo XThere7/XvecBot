@@ -1,0 +1,134 @@
+import * as React from "react";
+import { cn } from "@/lib/cn";
+
+/**
+ * BotBase network mark — a clean vector reconstruction of the brand image.
+ *
+ * The eight indigo petals form a network ring around a dark core; the light
+ * node details keep the mark legible at sidebar (28px) and favicon sizes.
+ * It is deliberately self-contained so it works on both canvas themes.
+ */
+export function BotBaseMark({
+  className,
+  ...props
+}: React.ComponentProps<"svg">) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      className={cn("shrink-0", className)}
+      {...props}
+    >
+      <defs>
+        <linearGradient
+          id="bb-petal"
+          x1="12"
+          y1="6"
+          x2="54"
+          y2="58"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#A5B4FC" />
+          <stop offset="0.46" stopColor="#6366F1" />
+          <stop offset="1" stopColor="#2563EB" />
+        </linearGradient>
+        <linearGradient
+          id="bb-core"
+          x1="24"
+          y1="21"
+          x2="42"
+          y2="44"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#161C33" />
+          <stop offset="1" stopColor="#080B16" />
+        </linearGradient>
+        <radialGradient
+          id="bb-glow"
+          cx="0"
+          cy="0"
+          r="1"
+          gradientTransform="translate(32 32) rotate(90) scale(30)"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#6366F1" stopOpacity="0.24" />
+          <stop offset="1" stopColor="#6366F1" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      <circle cx="32" cy="32" r="30" fill="url(#bb-glow)" />
+
+      {/* Network ring and radial connectors sit behind the petals. */}
+      <g
+        stroke="#93C5FD"
+        strokeOpacity="0.4"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+      >
+        <circle
+          cx="32"
+          cy="32"
+          r="21.5"
+          strokeDasharray="1.4 3.8"
+        />
+        <path d="M39.8 25.2l2.3 2.3M39.8 38.8l2.3-2.3M24.2 38.8l-2.3-2.3M24.2 25.2l-2.3 2.3M32 10.5v2.2M32 51.3v2.2M10.5 32h2.2M51.3 32h2.2" />
+      </g>
+      <g fill="#93C5FD" fillOpacity="0.8">
+        <circle cx="42.7" cy="21.3" r="1" />
+        <circle cx="42.7" cy="42.7" r="1" />
+        <circle cx="21.3" cy="42.7" r="1" />
+        <circle cx="21.3" cy="21.3" r="1" />
+        <circle cx="32" cy="10.5" r="1.1" />
+        <circle cx="53.5" cy="32" r="1.1" />
+        <circle cx="32" cy="53.5" r="1.1" />
+        <circle cx="10.5" cy="32" r="1.1" />
+      </g>
+
+      {/* Eight rounded diamond petals, angled outward around the core. */}
+      <g fill="url(#bb-petal)">
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" />
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" transform="rotate(45 32 32)" />
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" transform="rotate(90 32 32)" />
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" transform="rotate(135 32 32)" />
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" transform="rotate(180 32 32)" />
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" transform="rotate(225 32 32)" />
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" transform="rotate(270 32 32)" />
+        <path d="M32 5.5A5 5 0 0 1 35.5 7L37.5 9A5 5 0 0 1 39 12.5A5 5 0 0 1 37.5 16L35.5 18A5 5 0 0 1 32 19.5A5 5 0 0 1 28.5 18L26.5 16A5 5 0 0 1 25 12.5A5 5 0 0 1 26.5 9L28.5 7A5 5 0 0 1 32 5.5Z" transform="rotate(315 32 32)" />
+      </g>
+
+      {/* Light nodes at each petal tip. */}
+      <g fill="#DBEAFE" fillOpacity="0.9">
+        <circle cx="32" cy="8.7" r="1.15" />
+        <circle cx="48.5" cy="15.5" r="1.15" />
+        <circle cx="55.3" cy="32" r="1.15" />
+        <circle cx="48.5" cy="48.5" r="1.15" />
+        <circle cx="32" cy="55.3" r="1.15" />
+        <circle cx="15.5" cy="48.5" r="1.15" />
+        <circle cx="8.7" cy="32" r="1.15" />
+        <circle cx="15.5" cy="15.5" r="1.15" />
+      </g>
+
+      <circle
+        cx="32"
+        cy="32"
+        r="11.7"
+        fill="url(#bb-core)"
+        stroke="#A5B4FC"
+        strokeOpacity="0.34"
+        strokeWidth="1"
+      />
+      <circle
+        cx="32"
+        cy="32"
+        r="10.2"
+        fill="none"
+        stroke="#6366F1"
+        strokeOpacity="0.28"
+        strokeWidth="0.7"
+      />
+      <path d="M27.387962341308594 37.2V25.559375000000003H32.21359634399414Q33.515472412109375 25.559375000000003 34.39453601837158 25.932811927795413Q35.27359962463379 26.306248855590823 35.71672534942627 26.96984214782715Q36.15985107421875 27.63343544006348 36.15985107421875 28.50874824523926Q36.15985107421875 29.175622177124026 35.88235092163086 29.696560096740725Q35.60485076904297 30.217498016357425 35.11781883239746 30.55702991485596Q34.63078689575195 30.896561813354495 33.992347717285156 31.03124923706055V31.15249938964844Q34.693599700927734 31.177811813354495 35.29000663757324 31.524530601501468Q35.88641357421875 31.87124938964844 36.24969482421875 32.48921794891358Q36.61297607421875 33.107186508178714 36.61297607421875 33.94999809265137Q36.61297607421875 34.88437385559082 36.14235019683838 35.62015552520752Q35.67172431945801 36.35593719482422 34.77078628540039 36.77796859741211Q33.86984825134277 37.2 32.57797431945801 37.2ZM30.14297866821289 34.973113250732425H31.92734146118164Q32.85327339172363 34.973113250732425 33.296865463256836 34.61592788696289Q33.74045753479004 34.25874252319336 33.74045753479004 33.637494277954104Q33.74045753479004 33.1821834564209 33.52670860290527 32.84734172821045Q33.31295967102051 32.5125 32.91843032836914 32.328438949584964Q32.52390098571777 32.144377899169925 31.98171615600586 32.144377899169925H30.14297866821289ZM30.14297866821289 30.359996032714847H31.74359130859375Q32.20827674865723 30.359996032714847 32.570618629455566 30.202965927124026Q32.932960510253906 30.045935821533206 33.14077186584473 29.751094055175784Q33.34858322143555 29.456252288818362 33.34858322143555 29.038754653930667Q33.34858322143555 28.45313186645508 32.92811584472656 28.10782165527344Q32.50764846801758 27.7625114440918 31.79046630859375 27.7625114440918H30.14297866821289Z" fill="#FFFFFF" />
+    </svg>
+  );
+}

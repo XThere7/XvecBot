@@ -113,10 +113,12 @@ export function LoginForm({ redirectTo }: { redirectTo: string | null }) {
         Sign in
       </Button>
 
-      {/* No backend endpoint exists for password recovery — deliberately not a form. */}
+      {/* Self-service password recovery lives at /forgot-password. */}
       <p className="text-xs text-tertiary">
         Forgot your password?{" "}
-        <span className="text-secondary">Password recovery is coming soon.</span>
+        <Link href="/forgot-password" className="text-accent-300 hover:underline">
+          Reset it here
+        </Link>
       </p>
 
       <p className="text-sm text-secondary">

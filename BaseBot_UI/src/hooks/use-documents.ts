@@ -6,6 +6,7 @@ import { ApiRequestError, apiDelete, apiGet, apiPost } from "@/lib/api-client";
 import { normaliseError } from "@/lib/api-error";
 import { QUERY_STALE_TIME_MS } from "@/lib/constants";
 import { workspaceKeys } from "./use-workspaces";
+import { billingKeys } from "./use-billing";
 import {
   documentStatusSchema,
   trainResponseSchema,
@@ -68,6 +69,9 @@ export function useUploadDocument(wsId: string) {
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: documentKeys.list(wsId) });
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+      void queryClient.invalidateQueries({
+        queryKey: billingKeys.workspace(wsId),
+      });
       if (result.train === "conflict") {
         // Another run is in flight — the existing poll loop picks it up.
         return;
@@ -142,6 +146,9 @@ export function useDeleteDocument(wsId: string) {
       );
       void queryClient.invalidateQueries({ queryKey: documentKeys.list(wsId) });
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+      void queryClient.invalidateQueries({
+        queryKey: billingKeys.workspace(wsId),
+      });
     },
   });
 }

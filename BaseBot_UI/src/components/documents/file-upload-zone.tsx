@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 export type FileUploadZoneProps = {
   onFiles: (files: File[]) => void;
   disabled?: boolean;
+  /** Replaces the drop prompt when `disabled` is set (e.g. storage full). */
+  disabledLabel?: string;
   uploadingCount?: number;
   /** Per-file pre-flight rejections, shown under the zone. */
   rejections?: { name: string; message: string }[];
@@ -26,6 +28,7 @@ export type FileUploadZoneProps = {
 export function FileUploadZone({
   onFiles,
   disabled,
+  disabledLabel,
   uploadingCount = 0,
   rejections = [],
   onDismissRejection,
@@ -71,9 +74,11 @@ export function FileUploadZone({
           )}
         />
         <p className="mt-3 text-base text-primary">
-          {uploadingCount > 0
-            ? `Uploading ${uploadingCount} file${uploadingCount === 1 ? "" : "s"}…`
-            : "Drop files here, or choose from your device"}
+          {disabled
+            ? (disabledLabel ?? "Uploads are paused for this workspace.")
+            : uploadingCount > 0
+              ? `Uploading ${uploadingCount} file${uploadingCount === 1 ? "" : "s"}…`
+              : "Drop files here, or choose from your device"}
         </p>
         <p className="mt-1 text-xs text-tertiary">
           {ALLOWED_FILE_EXTENSIONS.join(", ")} · recommended under{" "}

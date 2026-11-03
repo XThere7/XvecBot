@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { TabNav } from "@/components/common/tab-nav";
+import { PlanBadge } from "@/components/billing/plan-badge";
 import { Button } from "@/components/ui/button";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -15,21 +16,23 @@ import {
   workspaceHref,
   type WorkspaceTab,
 } from "@/lib/routes";
-import { useDocuments } from "@/hooks/use-documents";
+import { useBilling } from "@/hooks/use-billing";
+import { useKnowledgeReadiness } from "@/hooks/use-knowledge-readiness";
 import { useAgents } from "@/hooks/use-agents";
 import { useWorkspace } from "@/hooks/use-workspaces";
 
 const TABS: { id: WorkspaceTab; label: string }[] = [
   { id: "documents", label: "Documents" },
   { id: "agents", label: "Agents" },
+  { id: "billing", label: "Plan" },
   { id: "developer", label: "Developer" },
   { id: "settings", label: "Settings" },
 ];
 
 /**
  * Workspace header + tab navigation. The active tab is in the URL (`?tab=`).
- * The "New agent" control is gated on at least one document with
- * status === "ready" — uploaded/processing/failed do not count.
+ * The "New agent" control is gated on at least one ready document or indexed
+ * website page — sources that are still uploading/scanning do not count.
  */
 export function WorkspaceHeader({ wsId }: { wsId: string }) {
   const pathname = usePathname();
@@ -47,28 +50,43 @@ export function WorkspaceHeader({ wsId }: { wsId: string }) {
       : isWorkspaceTab(tabParam)
         ? tabParam
         : DEFAULT_WORKSPACE_TAB;
-  const documents = useDocuments(wsId);
+  const knowledge = useKnowledgeReadiness(wsId);
   const agents = useAgents(wsId);
+  const billing = useBilling(wsId);
 
-  const readyCount = (documents.data ?? []).filter((d) => d.status === "ready").length;
-  const gateMet = readyCount > 0;
+  const gateMet = knowledge.hasReadyKnowledge;
+  const knowledgeSourceCount =
+    (knowledge.documents.data?.length ?? 0) +
+    (knowledge.websites.data?.length ?? 0);
+
+  const agentUsage = billing.data?.usage.agents;
+  const atAgentLimit = agentUsage?.limit !== null && agentUsage
+    ? agentUsage.used >= agentUsage.limit
+    : false;
+  const canCreateAgent = gateMet && !atAgentLimit;
 
   const showAgentAction = currentTab === "agents" || currentTab === "documents";
 
   const newAgentButton = (
     <Button
-      asChild={gateMet}
+      asChild={canCreateAgent}
       variant="primary"
-      disabled={!gateMet}
+      disabled={!canCreateAgent}
       iconLeft={<Plus aria-hidden className="h-4 w-4" />}
     >
-      {gateMet ? (
+      {canCreateAgent ? (
         <Link href={`/workspaces/${wsId}/agents/new`}>New agent</Link>
       ) : (
         <span>New agent</span>
       )}
     </Button>
   );
+
+  const agentGateMessage = !gateMet
+    ? "Add at least one knowledge source before creating an agent — upload and train a document, or connect a website."
+    : `You have reached the ${billing.data?.plan.name ?? "current"} plan's limit of ${
+        agentUsage?.limit ?? 0
+      } agents. Open Plan & usage to upgrade.`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -80,19 +98,26 @@ export function WorkspaceHeader({ wsId }: { wsId: string }) {
         }
         meta={
           workspace.data ? (
-            <RelativeTime date={workspace.data.created_at} className="text-xs text-tertiary" />
+            <div className="flex flex-wrap items-center gap-2">
+              <PlanBadge plan={billing.data?.plan.id ?? workspace.data.plan} />
+              {billing.data?.is_trial && (
+                <span className="rounded-full border border-accent-500/40 bg-accent-tint px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-accent-300">
+                  Trial
+                </span>
+              )}
+              <RelativeTime
+                date={workspace.data.created_at}
+                className="text-xs text-tertiary"
+              />
+            </div>
           ) : undefined
         }
         actions={
           showAgentAction ? (
-            gateMet ? (
+            canCreateAgent ? (
               newAgentButton
             ) : (
-              <Tooltip
-                content="Train at least one document before creating an agent — an agent with no knowledge base cannot answer."
-              >
-                {newAgentButton}
-              </Tooltip>
+              <Tooltip content={agentGateMessage}>{newAgentButton}</Tooltip>
             )
           ) : undefined
         }
@@ -106,7 +131,7 @@ export function WorkspaceHeader({ wsId }: { wsId: string }) {
             href: workspaceHref(wsId, tab.id),
             count:
               tab.id === "documents"
-                ? documents.data?.length
+                ? knowledgeSourceCount
                 : tab.id === "agents"
                   ? agents.data?.length
                   : undefined,

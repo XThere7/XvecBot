@@ -22,6 +22,7 @@ export const agentChatSchema = z.object({
 export const sourceSchema = z.object({
   filename: z.string(),
   chunk_index: z.number(),
+  source_url: z.string().nullable().optional(),
 });
 
 export const sourcesSchema = z.array(sourceSchema);

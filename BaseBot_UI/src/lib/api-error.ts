@@ -9,7 +9,7 @@ export type NormalisedError = {
  * `detail` is polymorphic on this API:
  *   string → 400 / 401 / 403 / 404 / 409 / 500
  *   array  → 422 validation, shaped [{ type, loc, msg }]
- *   object → rare, treated generically
+ *   object → structured errors ({ errors } or a plan-limit { message })
  */
 export function normaliseError(
   body: unknown,
@@ -45,6 +45,12 @@ export function normaliseError(
         })),
       };
     }
+    // Structured errors (plan limits, payment readiness) carry owner-facing
+    // copy in `message`. Show it rather than a generic status fallback.
+    const message = (detail as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      return { message, fieldErrors: [] };
+    }
   }
 
   if (status === 401) {
@@ -60,6 +66,13 @@ export function normaliseError(
 
   if (status === 429) {
     return { message: "You're sending messages too fast.", fieldErrors: [] };
+  }
+
+  if (status === 402) {
+    return {
+      message: "This action is not available on your current plan.",
+      fieldErrors: [],
+    };
   }
 
   if (status === 0) {

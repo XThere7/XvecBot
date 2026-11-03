@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { KeyRound, Plus, ShieldCheck, Terminal } from "lucide-react";
+import Link from "next/link";
+import { KeyRound, Lock, Plus, ShieldCheck, Terminal } from "lucide-react";
 import { ApiKeyFormModal } from "./api-key-form-modal";
 import { ApiKeyTable } from "./api-key-table";
 import { OneTimeApiKeyModal } from "./one-time-api-key-modal";
@@ -11,11 +12,14 @@ import { Button } from "@/components/ui/button";
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
+import { workspaceHref } from "@/lib/routes";
 import { API_BASE_URL } from "@/lib/api-client";
 import { formatNumber } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import { useAgents } from "@/hooks/use-agents";
+import { useBilling } from "@/hooks/use-billing";
 import {
   useApiKeys,
   useDeleteApiKey,
@@ -44,6 +48,7 @@ const CHAT_CURL = `curl -X POST "${API_BASE_URL}/api/v1/chat" \\
 export function DeveloperPanel({ wsId }: { wsId: string }) {
   const keysQuery = useApiKeys(wsId);
   const agentsQuery = useAgents(wsId);
+  const billingQuery = useBilling(wsId);
   const updateKey = useUpdateApiKey(wsId);
   const deleteKey = useDeleteApiKey(wsId);
 
@@ -114,6 +119,68 @@ export function DeveloperPanel({ wsId }: { wsId: string }) {
       toast.error({ title: "Could not delete the API key" });
     }
   };
+
+  if (billingQuery.isLoading) {
+    return (
+      <div className="flex flex-col gap-5">
+        <Skeleton width={220} height={28} />
+        <Skeleton variant="card" height={180} />
+      </div>
+    );
+  }
+
+  if (billingQuery.isError || !billingQuery.data) {
+    return (
+      <ErrorPanel
+        title="We could not load your plan"
+        statusCode={(billingQuery.error as { status?: number })?.status}
+        onRetry={() => void billingQuery.refetch()}
+      />
+    );
+  }
+
+  if (!billingQuery.data.plan.features.developer_api) {
+    return (
+      <div className="flex flex-col gap-5">
+        <div>
+          <h2 className="text-lg font-medium text-primary">Developer API</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-5 text-secondary">
+            Call your agents from your own backend, mobile backend or CRM with
+            a long-lived workspace key.
+          </p>
+        </div>
+
+        <AlertBanner
+          tone="warning"
+          icon={Lock}
+          title="Developer API is included in Standard and Pro"
+        >
+          Your workspace is on the{" "}
+          {billingQuery.data.plan.name} plan. Existing keys keep working if you
+          downgrade, but creating new keys requires Standard or Pro. Paid plans
+          will open here once payments go live.
+        </AlertBanner>
+
+        <EmptyState
+          icon={Terminal}
+          title="Upgrade to use the Developer API"
+          description="Standard includes 3 server-to-server API keys and 5 agents. Pro removes the API-key, agent and chat limits. You can compare every limit before deciding."
+          action={
+            <Button asChild variant="primary">
+              <Link href={workspaceHref(wsId, "billing")}>
+                View plan &amp; usage
+              </Link>
+            </Button>
+          }
+          secondaryAction={
+            <Button asChild variant="secondary">
+              <Link href="/pricing">Compare plans</Link>
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -229,7 +296,15 @@ export function DeveloperPanel({ wsId }: { wsId: string }) {
               for follow-up messages.
             </p>
           </div>
-          <CopyButton value={CHAT_CURL} label="Copy example" />
+          <div className="flex items-center gap-3">
+            <Link
+              href="/docs/developer"
+              className="text-xs text-tertiary underline-offset-2 transition-colors hover:text-accent-300 hover:underline"
+            >
+              Learn more
+            </Link>
+            <CopyButton value={CHAT_CURL} label="Copy example" />
+          </div>
         </div>
 
         <pre className="mt-3 overflow-x-auto rounded-md border border-subtle bg-inset p-3 font-mono text-xs leading-5 text-secondary">

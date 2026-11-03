@@ -7,6 +7,7 @@ import { ArrowRight, Menu, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { BotBaseMark } from "@/components/brand/botbase-mark";
 import { LANDING_NAV, PRODUCT_NAME } from "./landing-nav";
 
 /**
@@ -41,12 +42,7 @@ export function LandingHeader() {
     >
       <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-6">
         <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="BotBase home">
-          <span
-            aria-hidden
-            className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-500 text-base font-semibold text-inverse"
-          >
-            B
-          </span>
+          <BotBaseMark className="h-8 w-8" />
           <span className="text-lg font-semibold tracking-tight text-primary">
             {PRODUCT_NAME}
           </span>

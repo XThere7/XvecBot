@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { APP_NAME } from "@/lib/constants";
+import { BotBaseMark } from "@/components/brand/botbase-mark";
 import { cn } from "@/lib/cn";
 
 const STEPS = [
@@ -37,12 +38,7 @@ export function AuthShell({
       {/* Form */}
       <div className="flex flex-col px-5 py-8 sm:px-8">
         <Link href="/" className="flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="flex h-7 w-7 items-center justify-center rounded-sm bg-accent-500 text-sm font-semibold text-inverse"
-          >
-            X
-          </span>
+          <BotBaseMark className="h-7 w-7" />
           <span className="text-lg font-semibold text-primary">{APP_NAME}</span>
         </Link>
 

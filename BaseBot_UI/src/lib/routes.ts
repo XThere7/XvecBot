@@ -1,5 +1,15 @@
-export type WorkspaceTab = "documents" | "agents" | "developer" | "settings";
-export type AgentTab = "overview" | "test" | "conversations" | "embed";
+export type WorkspaceTab =
+  | "documents"
+  | "agents"
+  | "developer"
+  | "billing"
+  | "settings";
+export type AgentTab =
+  | "overview"
+  | "test"
+  | "media"
+  | "conversations"
+  | "embed";
 
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "documents";
 export const DEFAULT_AGENT_TAB: AgentTab = "overview";
@@ -33,6 +43,7 @@ export function isWorkspaceTab(value: string | undefined): value is WorkspaceTab
     value === "documents" ||
     value === "agents" ||
     value === "developer" ||
+    value === "billing" ||
     value === "settings"
   );
 }
@@ -52,6 +63,7 @@ export function isAgentTab(value: string | undefined): value is AgentTab {
   return (
     value === "overview" ||
     value === "test" ||
+    value === "media" ||
     value === "conversations" ||
     value === "embed"
   );

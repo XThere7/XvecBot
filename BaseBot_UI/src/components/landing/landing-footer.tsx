@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BotBaseMark } from "@/components/brand/botbase-mark";
 import { LANDING_NAV } from "./landing-nav";
 
 /**
@@ -11,12 +12,7 @@ export function LandingFooter() {
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-12 sm:px-6 md:flex-row md:items-start md:justify-between">
         <div className="max-w-xs">
           <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden
-              className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-500 text-base font-semibold text-inverse"
-            >
-              B
-            </span>
+            <BotBaseMark className="h-8 w-8" />
             <span className="text-lg font-semibold tracking-tight text-primary">
               BotBase
             </span>

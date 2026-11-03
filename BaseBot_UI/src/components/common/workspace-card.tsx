@@ -8,6 +8,7 @@ import { FileText, Settings2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { RowMenu } from "@/components/ui/dropdown-menu";
+import { PlanBadge } from "@/components/billing/plan-badge";
 import { workspaceHref } from "@/lib/routes";
 import type { Workspace } from "@/types/api";
 
@@ -52,12 +53,15 @@ export function WorkspaceCard({
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <Link
-          href={workspaceHref(workspace.id, "documents")}
-          className="text-lg text-primary hover:text-accent-300"
-        >
-          <span className="line-clamp-2">{workspace.name}</span>
-        </Link>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Link
+            href={workspaceHref(workspace.id, "documents")}
+            className="text-lg text-primary hover:text-accent-300"
+          >
+            <span className="line-clamp-2">{workspace.name}</span>
+          </Link>
+          <PlanBadge plan={workspace.plan} />
+        </div>
         <RowMenu items={menuItems} label={`Actions for ${workspace.name}`} />
       </div>
 

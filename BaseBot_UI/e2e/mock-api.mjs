@@ -12,12 +12,158 @@ const PORT = Number(process.argv[2] ?? 8000);
 const users = new Map();
 const workspaces = new Map();
 const documents = new Map();
+const websites = new Map();
+const websitePages = new Map();
 const agents = new Map();
 const conversations = new Map();
 const messages = new Map();
 const tokens = new Map();
 
 const now = () => new Date().toISOString().replace("Z", "");
+
+const FREE_PLAN = {
+  id: "free",
+  name: "Free",
+  tagline: "For trying BotBase on one workspace.",
+  price_tzs: 0,
+  price_label: "Free",
+  price_display: "Free forever",
+  period: "forever",
+  recommended: false,
+  limits: {
+    agents: 1,
+    documents: 5,
+    pages_indexed: 50,
+    website_sources: 1,
+    website_refresh: "manual",
+    api_keys: 0,
+    chat_messages: 100,
+    embed_tokens: 1,
+    storage_bytes: 100 * 1024 * 1024,
+    members: 1,
+    social_media_sources: 3,
+  },
+  features: {
+    website_widget: true,
+    citations: true,
+    conversation_history: true,
+    lead_forms: false,
+    email_integration: false,
+    lead_qualification: false,
+    actions: false,
+    analytics: "usage",
+    whatsapp: false,
+    developer_api: false,
+    automations: false,
+    custom_branding: false,
+    support: "community",
+  },
+  coming_soon: ["lead_forms"],
+};
+
+function billingFor(workspace) {
+  const storageUsed = [...documents.values()]
+    .filter((document) => document.workspace_id === workspace.id)
+    .reduce((total, document) => total + document.size_bytes, 0);
+  const agentCount = [...agents.values()].filter(
+    (agent) => agent.workspace_id === workspace.id,
+  ).length;
+  const nowIso = now();
+  const counter = (used, limit) => ({
+    used,
+    limit,
+    percent: limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0,
+    unlimited: limit === null,
+  });
+
+  return {
+    workspace_id: workspace.id,
+    plan: FREE_PLAN,
+    plans: [FREE_PLAN],
+    is_trial: false,
+    base_plan: "free",
+    effective_plan: "free",
+    trial_ends_at: null,
+    days_remaining: null,
+    usage: {
+      agents: counter(agentCount, FREE_PLAN.limits.agents),
+      documents: counter(
+        [...documents.values()].filter((d) => d.workspace_id === workspace.id)
+          .length,
+        FREE_PLAN.limits.documents,
+      ),
+      pages_indexed: counter(0, FREE_PLAN.limits.pages_indexed),
+      website_sources: counter(
+        [...websites.values()].filter((w) => w.workspace_id === workspace.id)
+          .length,
+        FREE_PLAN.limits.website_sources,
+      ),
+      api_keys: counter(0, FREE_PLAN.limits.api_keys),
+      embed_tokens: counter(
+        [...tokens.values()].filter((t) => t.workspace_id === workspace.id)
+          .length,
+        FREE_PLAN.limits.embed_tokens,
+      ),
+      chat_messages: {
+        ...counter(0, FREE_PLAN.limits.chat_messages),
+        period_start: nowIso,
+        period_end: nowIso,
+        resets_at: nowIso,
+      },
+      storage: {
+        used_bytes: storageUsed,
+        limit_bytes: FREE_PLAN.limits.storage_bytes,
+        percent: Math.min(
+          100,
+          Math.round((storageUsed / FREE_PLAN.limits.storage_bytes) * 100),
+        ),
+      },
+      members: { ...counter(1, FREE_PLAN.limits.members), enforced: true },
+    },
+    period: { start: nowIso, end: nowIso, resets_at: nowIso },
+    plan_started_at: workspace.plan_started_at,
+    payments_configured: false,
+    upgrade_available: false,
+    launch_note: "Payments are not configured in this mock.",
+  };
+}
+
+function finishWebsiteSync(source) {
+  for (const [id, page] of websitePages) {
+    if (page.source_id === source.id) websitePages.delete(id);
+  }
+
+  const origin = new URL(source.url).origin;
+  const pages = [
+    { path: "/", title: "Home" },
+    { path: "/about", title: "About us" },
+    { path: "/pricing", title: "Pricing" },
+  ];
+  for (const [index, page] of pages.entries()) {
+    const id = randomUUID();
+    websitePages.set(id, {
+      id,
+      source_id: source.id,
+      workspace_id: source.workspace_id,
+      url: `${origin}${page.path}`,
+      title: page.title,
+      content_hash: `hash-${index + 1}`,
+      status: "indexed",
+      chunk_count: 4,
+      error_message: null,
+      last_indexed_at: now(),
+      created_at: now(),
+    });
+  }
+
+  source.status = "synced";
+  source.pages_discovered = pages.length;
+  source.pages_indexed = pages.length;
+  source.last_synced_at = now();
+  source.next_sync_at = null;
+  source.error_message = null;
+  source.updated_at = now();
+}
 
 function token64() {
   return Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
@@ -141,6 +287,8 @@ const server = createServer(async (req, res) => {
       system_prompt: body.system_prompt ?? "You are a helpful assistant.",
       owner_id: auth(req).userId,
       created_at: now(),
+      plan: "free",
+      plan_started_at: null,
     };
     workspaces.set(workspace.id, workspace);
     return send(res, 201, workspace);
@@ -164,9 +312,15 @@ const server = createServer(async (req, res) => {
     if (method === "DELETE") {
       workspaces.delete(wsId);
       for (const [id, doc] of documents) if (doc.workspace_id === wsId) documents.delete(id);
+      for (const [id, source] of websites) if (source.workspace_id === wsId) websites.delete(id);
+      for (const [id, page] of websitePages) if (page.workspace_id === wsId) websitePages.delete(id);
       for (const [id, agent] of agents) if (agent.workspace_id === wsId) agents.delete(id);
       return send(res, 204);
     }
+  }
+
+  if (parts.length === 3 && parts[2] === "billing" && method === "GET") {
+    return send(res, 200, billingFor(workspace));
   }
 
   if (parts.length === 3 && parts[2] === "chat" && method === "POST") {
@@ -179,6 +333,100 @@ const server = createServer(async (req, res) => {
       sources: docs.length ? [{ filename: docs[0].filename, chunk_index: 0 }] : [],
       conversation_history: body.conversation_history ?? [],
     });
+  }
+
+  if (parts[2] === "websites") {
+    if (parts.length === 3 && method === "GET") {
+      return send(
+        res,
+        200,
+        [...websites.values()]
+          .filter((source) => source.workspace_id === wsId)
+          .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
+      );
+    }
+
+    if (parts.length === 3 && method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      let parsed;
+      try {
+        parsed = new URL(body.url);
+      } catch {
+        return send(res, 400, { detail: "Invalid URL format." });
+      }
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        return send(res, 400, {
+          detail: "Only http:// and https:// URLs are supported.",
+        });
+      }
+      const url = parsed.toString();
+      const duplicate = [...websites.values()].some(
+        (source) => source.workspace_id === wsId && source.url === url,
+      );
+      if (duplicate) {
+        return send(res, 409, {
+          detail: "This website is already connected to the workspace.",
+        });
+      }
+
+      const source = {
+        id: randomUUID(),
+        workspace_id: wsId,
+        url,
+        name: body.name?.trim() || parsed.hostname.replace(/^www\./, ""),
+        status: "syncing",
+        pages_discovered: 0,
+        pages_indexed: 0,
+        last_synced_at: null,
+        next_sync_at: null,
+        refresh_policy: body.refresh_policy ?? "manual",
+        error_message: null,
+        created_at: now(),
+        updated_at: now(),
+      };
+      websites.set(source.id, source);
+      setTimeout(() => finishWebsiteSync(source), 2500);
+      return send(res, 202, source);
+    }
+
+    const source = websites.get(parts[3]);
+    if (!source || source.workspace_id !== wsId) {
+      return send(res, 404, { detail: "Website source not found" });
+    }
+
+    if (parts.length === 4 && method === "GET") return send(res, 200, source);
+
+    if (parts.length === 4 && method === "DELETE") {
+      if (source.status === "syncing") {
+        return send(res, 409, {
+          detail: "Cannot delete a source while it is syncing.",
+        });
+      }
+      websites.delete(source.id);
+      for (const [id, page] of websitePages) {
+        if (page.source_id === source.id) websitePages.delete(id);
+      }
+      return send(res, 204);
+    }
+
+    if (parts[4] === "pages" && method === "GET") {
+      return send(
+        res,
+        200,
+        [...websitePages.values()].filter((page) => page.source_id === source.id),
+      );
+    }
+
+    if (parts[4] === "refresh" && method === "POST") {
+      if (source.status === "syncing") {
+        return send(res, 409, { detail: "A sync is already in progress." });
+      }
+      source.status = "syncing";
+      source.error_message = null;
+      source.updated_at = now();
+      setTimeout(() => finishWebsiteSync(source), 2500);
+      return send(res, 202, { message: "Refresh started." });
+    }
   }
 
   if (parts[2] === "documents") {
@@ -262,6 +510,7 @@ const server = createServer(async (req, res) => {
         description: body.description ?? null,
         system_prompt: body.system_prompt,
         welcome_message: body.welcome_message ?? null,
+        icon_url: null,
         model: body.model ?? "meta-llama/llama-3.1-8b-instruct",
         temperature: body.temperature ?? 0.7,
         language: body.language ?? "English",
@@ -317,13 +566,39 @@ const server = createServer(async (req, res) => {
         sources: null,
         created_at: now(),
       });
-      const grounded = body.message.toLowerCase().includes("price");
+      const readyDocs = [...documents.values()].filter(
+        (document) => document.workspace_id === wsId && document.status === "ready",
+      );
+      const indexedPages = [...websitePages.values()].filter(
+        (page) => page.workspace_id === wsId && page.status === "indexed",
+      );
+      const websiteCitation =
+        indexedPages.find((page) => page.title?.toLowerCase().includes("pricing")) ??
+        indexedPages[0];
+      const grounded =
+        body.message.toLowerCase().includes("price") &&
+        (readyDocs.length > 0 || Boolean(websiteCitation));
+      const sources = grounded
+        ? readyDocs.length > 0
+          ? [{ filename: readyDocs[0].filename, chunk_index: 3 }]
+          : [
+              {
+                filename: websiteCitation.title ?? websiteCitation.url,
+                chunk_index: 0,
+                source_url: websiteCitation.url,
+              },
+            ]
+        : [];
       thread.push({
         id: randomUUID(),
         conversation_id: conversationId,
         role: "assistant",
-        content: grounded ? "Our prices are in the catalogue." : "I am not sure about that.",
-        sources: grounded ? [{ filename: "catalogue.txt", chunk_index: 3 }] : [],
+        content: grounded
+          ? readyDocs.length > 0
+            ? "Our prices are in the catalogue."
+            : "Our prices are on the pricing page."
+          : "I am not sure about that.",
+        sources,
         created_at: now(),
       });
       messages.set(conversationId, thread);
@@ -332,8 +607,12 @@ const server = createServer(async (req, res) => {
       conversation.updated_at = now();
       return send(res, 200, {
         conversation_id: conversationId,
-        answer: grounded ? "Our prices are in the catalogue." : "I am not sure about that.",
-        sources: grounded ? [{ filename: "catalogue.txt", chunk_index: 3 }] : [],
+        answer: grounded
+          ? readyDocs.length > 0
+            ? "Our prices are in the catalogue."
+            : "Our prices are on the pricing page."
+          : "I am not sure about that.",
+        sources,
         model_used: agent.model,
       });
     }
@@ -388,6 +667,7 @@ const server = createServer(async (req, res) => {
         const record = {
           id: randomUUID(),
           agent_id: agent.id,
+          workspace_id: wsId,
           token: full,
           label: body.label,
           is_active: true,
@@ -415,7 +695,11 @@ const server = createServer(async (req, res) => {
         return send(res, 204);
       }
       if (parts[6] === "snippet" && method === "GET") {
-        return send(res, 200, { snippet: snippetFor(record.token), token: record.token });
+        return send(res, 200, {
+          snippet: snippetFor(record.token),
+          token: record.token,
+          hosted_url: `http://localhost:${PORT}/chat/${record.token}`,
+        });
       }
     }
   }

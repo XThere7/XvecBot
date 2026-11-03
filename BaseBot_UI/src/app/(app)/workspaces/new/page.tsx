@@ -78,6 +78,15 @@ export default function NewWorkspacePage() {
         }
       />
 
+      <div className="max-w-2xl">
+        <AlertBanner tone="info" title="Your account starts on a 21-day Pro trial">
+          The trial includes full Pro access with no card required. After it
+          ends, the account moves to Free automatically: 1 AI agent, 5 documents,
+          50 indexed pages, 1 website source, 100 MB of storage and 100 chat
+          messages per month. Live usage and the reset date are on the Plan tab.
+        </AlertBanner>
+      </div>
+
       <form onSubmit={submit} noValidate className="max-w-2xl">
         <div className="flex flex-col gap-6 rounded-md border border-subtle bg-surface p-6">
           {serverErrors.form && <AlertBanner tone="danger">{serverErrors.form}</AlertBanner>}

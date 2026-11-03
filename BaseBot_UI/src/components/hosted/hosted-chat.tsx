@@ -61,6 +61,9 @@ export function HostedChat({ token }: { token: string }) {
   const [chatError, setChatError] = React.useState<string | null>(null);
   const [failedText, setFailedText] = React.useState<string | null>(null);
   const [chatDisabled, setChatDisabled] = React.useState(false);
+  const [chatDisabledReason, setChatDisabledReason] = React.useState<
+    "limit" | "invalid" | null
+  >(null);
 
   const bottomRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -135,9 +138,16 @@ export function HostedChat({ token }: { token: string }) {
       setFailedText(trimmed);
       if (
         error instanceof PublicApiError &&
-        (error.status === 401 || error.status === 403 || error.status === 404)
+        (error.status === 401 ||
+          error.status === 402 ||
+          error.status === 403 ||
+          error.status === 404)
       ) {
         setChatDisabled(true);
+        // A quota pause is temporary; a revoked link is not. Visitors see the
+        // same neutral copy either way, but only a revoked link tells them to
+        // ask for a new one.
+        setChatDisabledReason(error.status === 402 ? "limit" : "invalid");
       }
     } finally {
       setSending(false);
@@ -308,8 +318,9 @@ export function HostedChat({ token }: { token: string }) {
 
           {chatDisabled ? (
             <div className="rounded-md border border-subtle bg-surface px-4 py-3 text-sm text-tertiary">
-              This conversation is no longer available. Ask the business for a new
-              chat link.
+              {chatDisabledReason === "limit"
+                ? "This chat is temporarily unavailable. Please try again later."
+                : "This conversation is no longer available. Ask the business for a new chat link."}
             </div>
           ) : (
             <>

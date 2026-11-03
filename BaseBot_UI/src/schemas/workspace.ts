@@ -26,6 +26,8 @@ export const workspaceSchemaApi = z.object({
   system_prompt: z.string(),
   owner_id: z.string(),
   created_at: z.string(),
+  plan: z.enum(["free", "standard", "pro"]),
+  plan_started_at: z.string().nullable(),
 });
 
 export const workspaceListSchema = z.array(workspaceSchemaApi);

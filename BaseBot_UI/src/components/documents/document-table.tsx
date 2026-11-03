@@ -169,7 +169,7 @@ export function DocumentsEmptyState({ onUpload }: { onUpload: () => void }) {
     <EmptyState
       icon={FileSpreadsheet}
       title="No documents yet"
-      description="Upload your first document to give your agents something to answer from. PDF, TXT or DOCX."
+      description="Upload a PDF, TXT or DOCX, or connect a website above, to give your agents something to answer from."
       actionLabel="Upload document"
       onAction={onUpload}
     />

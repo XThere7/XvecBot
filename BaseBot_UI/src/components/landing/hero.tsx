@@ -3,14 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, Bot, FileText, Play, Sparkles, User, Zap } from "lucide-react";
+import { ArrowRight, Play, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 /**
- * Phase 1 — hero. Headline + dual CTA on the left, a live-looking product
- * visual on the right: a mock chat widget answering from a document, with a
- * source citation chip. Pure presentational markup, no backend.
+ * Phase 1 — hero. Headline + dual CTA on the left, the BotBase product film
+ * on the right. The film is a self-hosted MP4 with a poster so the hero never
+ * shifts while it loads.
  */
 export function Hero() {
   const reduceMotion = useReducedMotion();
@@ -63,75 +63,29 @@ export function Hero() {
           </motion.p>
         </div>
 
-        {/* Product visual — a mocked chat panel with a grounded answer. */}
+        {/* Product film — one clean, self-hosted loop. */}
         <motion.div
           {...item(0.15)}
-          className="relative mx-auto w-full max-w-[480px]"
-          aria-label="Product preview: a BotBase chat widget answering a question with a cited source"
+          className="relative mx-auto w-full max-w-[560px]"
+          aria-label="BotBase product film"
         >
           <div
             aria-hidden
             className="absolute -inset-6 rounded-[28px] bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,0.28),transparent_65%)] blur-2xl"
           />
-          <div className="relative overflow-hidden rounded-lg border border-subtle bg-surface shadow-elevation-3">
-            <div className="flex items-center justify-between gap-3 border-b border-subtle px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-tint text-xs font-semibold text-accent-300">
-                  A
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-primary">Acme Store Support</p>
-                  <p className="flex items-center gap-1.5 text-2xs text-success-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-success-500" />
-                    Online
-                  </p>
-                </div>
-              </div>
-              <Badge tone="neutral">
-                <Zap aria-hidden className="h-3 w-3" /> Live
-              </Badge>
-            </div>
-
-            <ol className="flex flex-col gap-4 px-4 py-5">
-              <li className="flex justify-end">
-                <p className="max-w-[80%] rounded-lg rounded-br-chip bg-accent-500 px-3.5 py-2.5 text-sm leading-5 text-inverse">
-                  Do you deliver to Arusha, and what does it cost?
-                </p>
-              </li>
-              <li className="flex flex-col gap-2">
-                <div className="flex items-start gap-2.5">
-                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-subtle bg-surface-raised text-tertiary">
-                    <Bot aria-hidden className="h-3.5 w-3.5" />
-                  </span>
-                  <p className="max-w-[85%] whitespace-pre-wrap rounded-lg rounded-bl-chip border border-subtle bg-surface-raised px-3.5 py-2.5 text-sm leading-5 text-primary">
-                    Yes — delivery to Arusha takes 2–3 days and costs 8,000 TZS
-                    for orders under 100,000 TZS. Orders above that ship free.
-                  </p>
-                </div>
-                <div className="pl-[38px]">
-                  <span className="inline-flex items-center gap-1.5 rounded-chip border border-subtle bg-inset px-2 py-0.5 text-2xs text-secondary">
-                    <FileText aria-hidden className="h-3 w-3 text-tertiary" />
-                    delivery-policy.pdf
-                    <span className="font-mono text-tertiary">#4</span>
-                  </span>
-                </div>
-              </li>
-              <li className="flex justify-end">
-                <p className="flex max-w-[80%] items-center gap-2 rounded-lg rounded-br-chip bg-accent-500 px-3.5 py-2.5 text-sm leading-5 text-inverse">
-                  <User aria-hidden className="h-3.5 w-3.5 opacity-80" />
-                  Asante — na swali la pili…
-                </p>
-              </li>
-            </ol>
-
-            <div className="border-t border-subtle p-3">
-              <div className="flex items-center gap-2 rounded-md border border-strong bg-inset px-3 py-2.5">
-                <p className="flex-1 text-sm text-tertiary">Ask about products, prices, delivery…</p>
-                <span className="rounded-sm bg-accent-500 px-3 py-1.5 text-xs font-medium text-inverse">
-                  Send
-                </span>
-              </div>
-            </div>
+          <div className="relative aspect-video overflow-hidden rounded-lg border border-subtle bg-surface shadow-elevation-3">
+            <video
+              className="h-full w-full object-cover"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              poster="/videos/botbase-hero-poster.jpg"
+              aria-label="BotBase turns your documents into an AI chat agent"
+            >
+              <source src="/videos/botbase-hero.mp4" type="video/mp4" />
+            </video>
           </div>
         </motion.div>
       </div>

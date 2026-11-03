@@ -96,12 +96,7 @@ export function AgentOverview({ wsId, agentId }: { wsId: string; agentId: string
             { label: "Language", value: agent.language },
             {
               label: "Model",
-              value: (
-                <span className="flex items-center gap-2">
-                  <Badge tone="neutral">{modelLabel(agent.model)}</Badge>
-                  <span className="font-mono text-2xs text-tertiary">{agent.model}</span>
-                </span>
-              ),
+              value: <Badge tone="neutral">{modelLabel(agent.model)}</Badge>,
             },
             { label: "Temperature", value: agent.temperature.toFixed(1) },
             {

@@ -1,4 +1,5 @@
 import { AgentOverview } from "@/components/agents/agent-overview";
+import { AgentMediaPanel } from "@/components/agents/agent-media-panel";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { ConversationsPanel } from "@/components/agents/conversations-panel";
 import { EmbedPanel } from "@/components/embed/embed-panel";
@@ -22,7 +23,11 @@ export default async function AgentPage({
 
   return (
     <TabContent tabKey={tab}>
-      {tab === "test" ? (
+      {tab === "media" ? (
+        <div className="max-w-4xl">
+          <AgentMediaPanel wsId={wsId} agentId={agentId} />
+        </div>
+      ) : tab === "test" ? (
         <div className="max-w-3xl">
           <ChatPanel wsId={wsId} agentId={agentId} />
         </div>

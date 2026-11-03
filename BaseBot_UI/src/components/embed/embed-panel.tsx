@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KeyRound, Plus } from "lucide-react";
 import { OneTimeTokenModal, type OneTimeToken } from "./one-time-token-modal";
@@ -168,13 +169,21 @@ function EmbedPanelInner({
           <StatCard label="Widget requests" value={formatNumber(totalRequests)} hint="Every widget call, including the info fetch" />
           <StatCard label="Tokens" value={tokens.length} />
         </div>
-        {agentActive ? (
-          createButton
-        ) : (
-          <Tooltip content="Activate the agent before creating a token">
-            {createButton}
-          </Tooltip>
-        )}
+        <div className="flex items-center gap-3">
+          <Link
+            href="/docs/deploy/widget"
+            className="text-xs text-tertiary underline-offset-2 transition-colors hover:text-accent-300 hover:underline"
+          >
+            Learn more
+          </Link>
+          {agentActive ? (
+            createButton
+          ) : (
+            <Tooltip content="Activate the agent before creating a token">
+              {createButton}
+            </Tooltip>
+          )}
+        </div>
       </div>
 
       {!agentActive && agent && (

@@ -13,6 +13,11 @@ export const workspaceKeys = {
   detail: (id: string) => ["workspaces", "detail", id] as const,
   documents: (id: string) => ["workspaces", "detail", id, "documents"] as const,
   agents: (id: string) => ["workspaces", "detail", id, "agents"] as const,
+  websites: (id: string) => ["workspaces", "detail", id, "websites"] as const,
+  websitePages: (id: string, sourceId: string) =>
+    ["workspaces", "detail", id, "websites", sourceId, "pages"] as const,
+  media: (id: string, agentId: string) =>
+    ["workspaces", "detail", id, "agents", agentId, "media"] as const,
 };
 
 export function useWorkspaces() {

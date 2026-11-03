@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { modelLabel } from "@/lib/reference-data";
 import { SourceChips } from "./source-chips";
 import { TypingIndicator } from "./typing-indicator";
 import type { Source } from "@/types/api";
@@ -96,10 +97,10 @@ export function ChatMessageBubble({
           <>
             <SourceChips sources={message.sources} />
             <div className="flex flex-wrap items-center gap-3">
-              {/* model_used is shown here and nowhere else — never in the widget. */}
+              {/* The raw model id is internal — show only the customer-facing label. */}
               {message.modelUsed && (
-                <span className="font-mono text-2xs text-tertiary">
-                  {message.modelUsed}
+                <span className="text-2xs text-tertiary">
+                  {modelLabel(message.modelUsed)}
                 </span>
               )}
               {message.createdAt && (

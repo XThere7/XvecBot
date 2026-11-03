@@ -22,7 +22,7 @@ export const MODELS: ModelOption[] = [
   },
   {
     value: "openrouter/auto",
-    label: "OpenRouter Auto",
+    label: "Auto",
     tier: "paid",
   },
   {
@@ -45,7 +45,7 @@ export const MODELS: ModelOption[] = [
   },
   {
     value: "openrouter/free",
-    label: "OpenRouter Auto (free)",
+    label: "Free",
     tier: "free",
     note: "Daily free-request quota",
   },
@@ -76,7 +76,16 @@ export type Language = (typeof LANGUAGES)[number];
 export const DEFAULT_LANGUAGE_OPTIONS = [...LANGUAGES];
 
 export function modelLabel(value: string): string {
-  return MODELS.find((m) => m.value === value)?.label ?? value;
+  const known = MODELS.find((m) => m.value === value);
+  if (known) return known.label;
+
+  // Model ids are internal routing details; never show them to customers.
+  const normalised = value.trim().toLowerCase();
+  if (!normalised || normalised.includes(":free") || normalised.endsWith("/free")) {
+    return "Free";
+  }
+  if (normalised.startsWith("openrouter/")) return "Auto";
+  return "Standard";
 }
 
 export function isKnownModel(value: string): boolean {

@@ -1,15 +1,24 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { ApiRequestError } from "@/lib/api-client";
 import { normaliseError } from "@/lib/api-error";
 import { MAX_FILE_SIZE_MB } from "@/lib/constants";
 import { toast } from "@/lib/toast";
+import { formatBytes } from "@/lib/format";
 import { validateFile } from "@/schemas/document";
 import { AlertBanner } from "@/components/ui/alert-banner";
+import { Button } from "@/components/ui/button";
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import { ErrorPanel } from "@/components/common/error-panel";
+import { UsageMeter } from "@/components/billing/usage-meter";
+import { WebsiteConnectForm } from "@/components/websites/website-connect-form";
+import { WebsiteSourcesSection } from "@/components/websites/website-sources-section";
+import { AddKnowledgePanel, type AddKnowledgeMode } from "./add-knowledge-panel";
 import { FileUploadZone } from "./file-upload-zone";
+import { workspaceHref } from "@/lib/routes";
+import { useBilling } from "@/hooks/use-billing";
 import {
   DocumentTable,
   DocumentsEmptyState,
@@ -27,6 +36,7 @@ import type { WorkspaceDocument } from "@/types/api";
 
 export function DocumentsPanel({ wsId }: { wsId: string }) {
   const query = useDocuments(wsId);
+  const billing = useBilling(wsId);
   const upload = useUploadDocument(wsId);
   const train = useTrainDocument(wsId);
   const remove = useDeleteDocument(wsId);
@@ -40,6 +50,17 @@ export function DocumentsPanel({ wsId }: { wsId: string }) {
     null,
   );
   const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [addMode, setAddMode] = React.useState<AddKnowledgeMode>("upload");
+  const [pickerRequest, setPickerRequest] = React.useState(0);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // The upload zone unmounts when the website form is selected. Route the
+  // documents empty-state action through the mode switch before opening.
+  React.useEffect(() => {
+    if (addMode === "upload" && pickerRequest > 0) {
+      fileInputRef.current?.click();
+    }
+  }, [addMode, pickerRequest]);
 
   const documents = query.data;
 
@@ -82,6 +103,8 @@ export function DocumentsPanel({ wsId }: { wsId: string }) {
 
   const documents_ = documents ?? [];
   const trainingCount = documents_.filter((d) => d.status === "processing").length;
+  const storage = billing.data?.usage.storage;
+  const storageFull = storage ? storage.used_bytes >= storage.limit_bytes : false;
 
   const handleFiles = async (files: File[]) => {
     const rejected: { name: string; message: string }[] = [];
@@ -155,8 +178,10 @@ export function DocumentsPanel({ wsId }: { wsId: string }) {
     }
   };
 
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-  const openPicker = () => fileInputRef.current?.click();
+  const openPicker = () => {
+    setAddMode("upload");
+    setPickerRequest((current) => current + 1);
+  };
 
   if (query.isError) {
     return (
@@ -177,33 +202,95 @@ export function DocumentsPanel({ wsId }: { wsId: string }) {
         </AlertBanner>
       )}
 
-      <div>
-        <FileUploadZone
-          inputRef={fileInputRef}
-          onFiles={(files) => void handleFiles(files)}
-          uploadingCount={pending.filter((row) => row.state === "uploading").length}
-          rejections={rejections}
-          onDismissRejection={(index) =>
-            setRejections((rows) => rows.filter((_, i) => i !== index))
+      {storageFull && (
+        <AlertBanner
+          tone="warning"
+          title="Knowledge storage is full"
+          action={
+            <Button asChild variant="secondary" size="sm">
+              <Link href={workspaceHref(wsId, "billing")}>
+                View plan &amp; usage
+              </Link>
+            </Button>
           }
-        />
-      </div>
+        >
+          You have used {formatBytes(storage?.used_bytes)} of{" "}
+          {formatBytes(storage?.limit_bytes)}. Delete a document or upgrade to
+          free up space for new uploads. Connecting a website still works —
+          indexed web pages do not use document storage.
+        </AlertBanner>
+      )}
 
-      <DocumentTable
-        documents={documents_}
-        pending={pending}
-        onCancelPending={(localId) =>
-          setPending((rows) => rows.filter((row) => row.localId !== localId))
+      {storage && (
+        <div className="rounded-md border border-subtle bg-surface px-4 py-3">
+          <UsageMeter
+            label="Knowledge storage"
+            used={storage.used_bytes}
+            limit={storage.limit_bytes}
+            percent={storage.percent}
+            format="bytes"
+            hint={
+              storageFull
+                ? "Full — new uploads are paused until you delete a document or upgrade."
+                : `${formatBytes(
+                    storage.limit_bytes - storage.used_bytes,
+                  )} available on the ${billing.data?.plan.name ?? "current"} plan`
+            }
+          />
+        </div>
+      )}
+
+      <AddKnowledgePanel
+        mode={addMode}
+        onModeChange={setAddMode}
+        uploadZone={
+          <FileUploadZone
+            inputRef={fileInputRef}
+            onFiles={(files) => void handleFiles(files)}
+            disabled={storageFull}
+            disabledLabel="Storage full — delete a document or upgrade to upload more."
+            uploadingCount={
+              pending.filter((row) => row.state === "uploading").length
+            }
+            rejections={rejections}
+            onDismissRejection={(index) =>
+              setRejections((rows) => rows.filter((_, i) => i !== index))
+            }
+          />
         }
-        onDelete={(document) => setPendingDelete(document)}
-        onTrain={(document) => void handleTrain(document)}
-        retryingIds={
-          train.isPending && train.variables ? [train.variables] : []
-        }
-        slowIds={timedOutIds}
-        loading={query.isLoading}
-        emptyState={<DocumentsEmptyState onUpload={openPicker} />}
+        websiteForm={<WebsiteConnectForm wsId={wsId} />}
       />
+
+      <WebsiteSourcesSection wsId={wsId} />
+
+      <section aria-labelledby="documents-heading" className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="documents-heading" className="text-xl text-primary">
+            Documents
+          </h2>
+          {!query.isLoading && documents_.length > 0 && (
+            <span className="text-xs text-tertiary">
+              {documents_.length} document{documents_.length === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+
+        <DocumentTable
+          documents={documents_}
+          pending={pending}
+          onCancelPending={(localId) =>
+            setPending((rows) => rows.filter((row) => row.localId !== localId))
+          }
+          onDelete={(document) => setPendingDelete(document)}
+          onTrain={(document) => void handleTrain(document)}
+          retryingIds={
+            train.isPending && train.variables ? [train.variables] : []
+          }
+          slowIds={timedOutIds}
+          loading={query.isLoading}
+          emptyState={<DocumentsEmptyState onUpload={openPicker} />}
+        />
+      </section>
 
       <ConfirmationDialog
         open={Boolean(pendingDelete)}

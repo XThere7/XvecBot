@@ -16,7 +16,12 @@ import { StatCard } from "@/components/ui/stat-card";
 import { apiGet } from "@/lib/api-client";
 import { agentHref, workspaceHref } from "@/lib/routes";
 import { useWorkspaces } from "@/hooks/use-workspaces";
-import type { Agent, EmbedToken, WorkspaceDocument } from "@/types/api";
+import type {
+  Agent,
+  EmbedToken,
+  WebsiteSource,
+  WorkspaceDocument,
+} from "@/types/api";
 
 export default function DashboardPage() {
   const workspacesQuery = useWorkspaces();
@@ -38,12 +43,17 @@ export default function DashboardPage() {
         queryKey: ["workspaces", "detail", workspace.id, "agents"],
         queryFn: () => apiGet<Agent[]>(`/workspaces/${workspace.id}/agents`),
       },
+      {
+        queryKey: ["workspaces", "detail", workspace.id, "websites"],
+        queryFn: () =>
+          apiGet<WebsiteSource[]>(`/workspaces/${workspace.id}/websites`),
+      },
     ]),
   });
 
   const agentQueries = useQueries({
     queries: workspaces.flatMap((workspace, workspaceIndex) => {
-      const agents = (results[workspaceIndex * 2 + 1]?.data as Agent[] | undefined) ?? [];
+      const agents = (results[workspaceIndex * 3 + 1]?.data as Agent[] | undefined) ?? [];
       return agents.map((agent) => ({
         queryKey: ["workspaces", "detail", workspace.id, "agents", "detail", agent.id, "tokens"],
         queryFn: () =>
@@ -55,7 +65,7 @@ export default function DashboardPage() {
   const allAgents = React.useMemo(
     () =>
       workspaces.flatMap((workspace, index) => {
-        const agents = (results[index * 2 + 1]?.data as Agent[] | undefined) ?? [];
+        const agents = (results[index * 3 + 1]?.data as Agent[] | undefined) ?? [];
         return agents.map((agent) => ({ workspace, agent }));
       }),
     [workspaces, results],
@@ -64,8 +74,18 @@ export default function DashboardPage() {
   const allDocuments = React.useMemo(
     () =>
       workspaces.flatMap((workspace, index) => {
-        const docs = (results[index * 2]?.data as WorkspaceDocument[] | undefined) ?? [];
+        const docs = (results[index * 3]?.data as WorkspaceDocument[] | undefined) ?? [];
         return docs.map((doc) => ({ workspace, doc }));
+      }),
+    [workspaces, results],
+  );
+
+  const allWebsites = React.useMemo(
+    () =>
+      workspaces.flatMap((workspace, index) => {
+        const sources =
+          (results[index * 3 + 2]?.data as WebsiteSource[] | undefined) ?? [];
+        return sources.map((source) => ({ workspace, source }));
       }),
     [workspaces, results],
   );
@@ -81,10 +101,15 @@ export default function DashboardPage() {
     : null;
 
   const readyDocuments = allDocuments.filter((entry) => entry.doc.status === "ready");
+  const indexedWebsitePages = allWebsites.reduce(
+    (total, entry) => total + entry.source.pages_indexed,
+    0,
+  );
+  const readyKnowledgeCount = readyDocuments.length + indexedWebsitePages;
   const activeAgents = allAgents.filter((entry) => Boolean(entry.agent.is_active));
 
   const firstWorkspace = workspaces[0];
-  const hasReadyDocument = readyDocuments.length > 0;
+  const hasReadyKnowledge = readyKnowledgeCount > 0;
   const hasAgent = allAgents.length > 0;
 
   const onboardingSteps = [
@@ -97,15 +122,16 @@ export default function DashboardPage() {
       cta: firstWorkspace ? "Open workspace" : "Create workspace",
     },
     {
-      id: "document",
-      title: "Upload a document",
-      description: "PDF, TXT or DOCX. We train it automatically after the upload.",
-      complete: hasReadyDocument,
+      id: "knowledge",
+      title: "Add knowledge",
+      description:
+        "Upload a PDF, TXT or DOCX, or connect a website. We index it automatically.",
+      complete: hasReadyKnowledge,
       href: firstWorkspace ? workspaceHref(firstWorkspace.id, "documents") : undefined,
-      cta: "Upload document",
+      cta: "Add knowledge",
       lockedReason: firstWorkspace
         ? undefined
-        : "Create a workspace first — documents live inside a workspace.",
+        : "Create a workspace first — knowledge sources live inside a workspace.",
     },
     {
       id: "agent",
@@ -113,13 +139,13 @@ export default function DashboardPage() {
       description: "An agent is your AI assistant — a name, a personality, your knowledge.",
       complete: hasAgent,
       href:
-        firstWorkspace && hasReadyDocument
+        firstWorkspace && hasReadyKnowledge
           ? `/workspaces/${firstWorkspace.id}/agents/new`
           : undefined,
       cta: "New agent",
-      lockedReason: hasReadyDocument
+      lockedReason: hasReadyKnowledge
         ? undefined
-        : "Train at least one document first — an agent with no knowledge base cannot answer.",
+        : "Add at least one knowledge source first — upload and train a document, or connect a website.",
     },
   ];
 
@@ -187,8 +213,13 @@ export default function DashboardPage() {
             icon={MessageSquare}
           />
           <StatCard
-            label="Ready documents"
-            value={readyDocuments.length}
+            label="Ready knowledge"
+            value={readyKnowledgeCount}
+            hint={`${readyDocuments.length} document${
+              readyDocuments.length === 1 ? "" : "s"
+            } · ${indexedWebsitePages} website page${
+              indexedWebsitePages === 1 ? "" : "s"
+            }`}
             icon={FileStack}
           />
           <StatCard
@@ -227,10 +258,10 @@ export default function DashboardPage() {
                       key={workspace.id}
                       workspace={workspace}
                       stats={{
-                        agents: ((results[index * 2 + 1]?.data as Agent[] | undefined) ?? [])
+                        agents: ((results[index * 3 + 1]?.data as Agent[] | undefined) ?? [])
                           .length,
                         readyDocuments: (
-                          (results[index * 2]?.data as WorkspaceDocument[] | undefined) ?? []
+                          (results[index * 3]?.data as WorkspaceDocument[] | undefined) ?? []
                         ).filter((doc) => doc.status === "ready").length,
                       }}
                     />
@@ -252,11 +283,11 @@ export default function DashboardPage() {
               <div className="rounded-md border border-subtle bg-surface px-6 py-8">
                 <p className="text-base text-primary">No agents yet</p>
                 <p className="mt-1.5 text-sm text-secondary">
-                  {hasReadyDocument
+                  {hasReadyKnowledge
                     ? "An agent is your AI assistant — a name, a personality and the knowledge it answers from."
-                    : "Train at least one document before creating an agent — an agent with no knowledge base cannot answer."}
+                    : "Add a knowledge source before creating an agent — an agent with no knowledge base cannot answer."}
                 </p>
-                {hasReadyDocument && firstWorkspace && (
+                {hasReadyKnowledge && firstWorkspace && (
                   <Button
                     asChild
                     variant="primary"
@@ -294,11 +325,11 @@ export default function DashboardPage() {
             <div className="rounded-md border border-subtle bg-surface p-5">
               <h2 className="text-lg text-primary">Next steps</h2>
               <ol className="mt-3 flex flex-col gap-3">
-                {!hasReadyDocument && (
+                {!hasReadyKnowledge && (
                   <li className="flex items-start gap-3 text-sm text-secondary">
                     <FileStack aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
                     <span>
-                      Upload a document to{" "}
+                      Upload a document or connect a website to{" "}
                       <Link
                         href={workspaceHref(firstWorkspace.id, "documents")}
                         className="text-accent-300 hover:underline"
@@ -309,7 +340,7 @@ export default function DashboardPage() {
                     </span>
                   </li>
                 )}
-                {hasReadyDocument && !hasAgent && (
+                {hasReadyKnowledge && !hasAgent && (
                   <li className="flex items-start gap-3 text-sm text-secondary">
                     <MessageSquare aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-tertiary" />
                     <span>

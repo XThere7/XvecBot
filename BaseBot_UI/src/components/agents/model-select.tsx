@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Select } from "@/components/ui/select";
 import { FieldControl } from "@/components/ui/field";
 import { MODEL_BILLING_CAPTION, MODEL_GROUPS, modelLabel } from "@/lib/reference-data";
@@ -36,7 +37,17 @@ export function ModelSelect({
           invalid={Boolean(error)}
         />
       </div>
-      <p className="text-2xs text-tertiary">Currently: {modelLabel(value)}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-2xs text-tertiary">
+          Currently: {modelLabel(value)}
+        </p>
+        <Link
+          href="/docs/agents/models"
+          className="text-2xs font-medium text-accent-300 underline-offset-2 hover:underline"
+        >
+          Learn more
+        </Link>
+      </div>
     </FieldControl>
   );
 }

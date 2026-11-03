@@ -87,11 +87,14 @@ try {
   check(
     "onboarding shows all three steps",
     (await page.getByText("Create a workspace").count()) > 0 &&
-      (await page.getByText("Upload a document").count()) > 0 &&
+      (await page.getByText("Add knowledge").count()) > 0 &&
       (await page.getByText("Create your first agent").count()) > 0,
   );
-  const lockedUpload = page.getByRole("button", { name: "Upload document" });
-  check("upload step is gated before a workspace exists", await lockedUpload.isDisabled());
+  const lockedKnowledge = page.getByRole("button", { name: "Add knowledge" });
+  check(
+    "knowledge step is gated before a workspace exists",
+    await lockedKnowledge.isDisabled(),
+  );
   await shot(page, "02-dashboard-onboarding");
 
   // ---- create workspace ----
@@ -149,6 +152,7 @@ try {
 
   // ---- overview ----
   await page.getByText("Acme Support").first().waitFor();
+  await page.getByText("Temperature").first().waitFor({ timeout: 10000 });
   check(
     "overview definition list renders the config",
     (await page.getByText("Temperature").count()) > 0 &&
@@ -192,7 +196,13 @@ try {
   const modal = page.getByRole("dialog");
   await modal.getByText("Copy this token now.").waitFor({ timeout: 15000 });
   check("one-time token modal opens immediately on 201", true);
-  const fullToken = (await modal.locator("code").last().innerText()).trim();
+  const fullToken = (
+    await modal
+      .locator("section")
+      .filter({ hasText: "2. The token on its own" })
+      .locator("code")
+      .innerText()
+  ).trim();
   check("full token is shown once, 64 chars", fullToken.length === 64, fullToken.slice(0, 12));
   check(
     "snippet contains the full token",
