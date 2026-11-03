@@ -74,3 +74,15 @@ go-live-hosting-plan.md
 !BaseBot_UI/e2e/catalogue.txt
 !deploy/README.md
 !deploy/restore.md
+# ── Marketing video library (local only — never committed or deployed) ──────
+marketing-videos/
+botbase-hero-video/
+
+# ── Local AI-agent tooling (never part of the product) ───────────────────────
+agent/
+.agents/
+.claude/
+skills-lock.json
+
+# HuggingFace model cache (embedding + reranker weights)
+.hf-cache/
