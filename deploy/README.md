@@ -37,7 +37,21 @@ ufw allow 22,80,443 && ufw enable
 curl -fsSL https://get.docker.com | sh && apt install -y docker-compose-plugin
 
 # 3. the code
-git clone <private-repo> /opt/botbase && cd /opt/botbase
+#    Use a read-only deploy key for the VPS: generate one here, add it on
+#    GitHub as a deploy key for the repository, then:
+ssh-keygen -t ed25519 -C "botbase-vps" -f /root/.ssh/github_deploy -N ""
+cat /root/.ssh/github_deploy.pub        # -> GitHub: repo -> Settings -> Deploy keys
+mkdir -p /root/.ssh && cat > /root/.ssh/config <<'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile /root/.ssh/github_deploy
+  IdentitiesOnly yes
+EOF
+chmod 600 /root/.ssh/config
+
+git clone git@github.com:XThere7/XvecBot.git /opt/botbase && cd /opt/botbase
+git checkout deployChat
 
 # 4. the configuration (secrets live ONLY here, never in git)
 cp deploy/env.example /opt/botbase/.env
