@@ -23,12 +23,15 @@ class Citation(BaseModel):
       - Phase 1 emits page, chunk_id, text_preview.
       - Phase 3 (agents) adds filename and chunk_index, and may omit page for
         non-paginated sources (.txt / .docx).
+      - Website-to-Knowledge adds source_url for crawled pages; uploaded
+        documents leave it null.
     """
     chunk_id: str
     page: Optional[int] = None
     text_preview: str = ""
     filename: Optional[str] = None
     chunk_index: Optional[int] = None
+    source_url: Optional[str] = None
 
 
 class QueryResponse(BaseModel):

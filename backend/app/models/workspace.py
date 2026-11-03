@@ -41,6 +41,8 @@ class Workspace(BaseModel):
     system_prompt: str = "You are a helpful assistant."
     owner_id: str
     created_at: datetime
+    plan: str = "free"
+    plan_started_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -64,6 +66,8 @@ class WorkspaceRead(BaseModel):
     system_prompt: str
     owner_id: str
     created_at: datetime
+    plan: str = "free"
+    plan_started_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
