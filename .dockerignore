@@ -15,3 +15,6 @@ data/*.db-shm
 *.log
 .DS_Store
 ip-tmp/
+
+# Local marketing video library (never part of the image)
+marketing-videos/
