@@ -49,6 +49,7 @@ async def index_chunks(
             text=chunk.text,
             workspace_id=metadata.get("workspace_id"),
             doc_id=metadata.get("doc_id"),
+            agent_id=metadata.get("agent_id"),
         )
         await insert_embedding(
             db,

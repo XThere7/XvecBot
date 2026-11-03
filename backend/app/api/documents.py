@@ -32,6 +32,7 @@ from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
 from ..core.uploads import UploadTooLarge, atomic_replace, save_upload_limited
+from ..services import plan_service
 from ..services.workspace_query_service import query_workspace
 from ..services.workspace_training_service import train_workspace_document
 from ..storage import vector_store
@@ -67,6 +68,8 @@ async def upload_document(
                 detail="Workspace not found",
             )
 
+        await plan_service.assert_can_create_document(db, workspace)
+
         original = Path(file.filename or "").name  # strip any path components
         ext = Path(original).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
@@ -93,6 +96,16 @@ async def upload_document(
                     f"File too large (max {settings.max_upload_bytes} bytes)."
                 ),
             ) from exc
+
+        # Subscription gate: the saved size is known now. Refuse before the
+        # file is moved into its permanent path, and clean up the temp file.
+        try:
+            await plan_service.assert_storage_available(
+                db, workspace, size_bytes
+            )
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
 
         try:
             atomic_replace(temp_path, save_path)
@@ -170,6 +183,8 @@ async def create_upload_url(
                 detail="Workspace not found",
             )
 
+        await plan_service.assert_can_create_document(db, workspace)
+
         original = Path(payload.filename or "").name
         ext = Path(original).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
@@ -184,6 +199,14 @@ async def create_upload_url(
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"File too large (max {settings.max_upload_bytes} bytes)",
+            )
+
+        # The browser tells us the size up front, so refuse an obviously
+        # over-quota upload before minting a URL. If the size is unknown we
+        # check again on complete-upload, after the object exists.
+        if payload.size_bytes is not None:
+            await plan_service.assert_storage_available(
+                db, workspace, payload.size_bytes
             )
 
         content_type = payload.content_type or content_type_for(original)
@@ -267,7 +290,8 @@ async def complete_upload(
                 detail="Workspace not found",
             )
         async with db.execute(
-            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ?",
+            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ? "
+            "AND file_type NOT IN ('website', 'social')",
             (doc_id, workspace_id),
         ) as cur:
             row = await cur.fetchone()
@@ -300,6 +324,25 @@ async def complete_upload(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"File too large (max {settings.max_upload_bytes} bytes)",
             )
+
+        # Authoritative storage check: the PUT may have delivered more bytes
+        # than the client declared. Exclude this row so re-completing an
+        # already-counted upload cannot double-count it.
+        try:
+            await plan_service.assert_storage_available(
+                db, workspace, head.size_bytes, exclude_doc_id=doc_id
+            )
+        except HTTPException:
+            # Do not leave an orphan object consuming the customer's bucket.
+            try:
+                await asyncio.to_thread(storage.delete_object, doc["object_key"])
+            except Exception as exc:  # pragma: no cover - best effort cleanup
+                log.warning(
+                    "Could not remove over-quota object",
+                    error=str(exc),
+                    doc_id=doc_id,
+                )
+            raise
 
         await db.execute(
             """UPDATE workspace_documents
@@ -344,7 +387,8 @@ async def create_download_url(
                 detail="Workspace not found",
             )
         async with db.execute(
-            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ?",
+            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ? "
+            "AND file_type NOT IN ('website', 'social')",
             (doc_id, workspace_id),
         ) as cur:
             row = await cur.fetchone()
@@ -398,7 +442,9 @@ async def list_documents(
             )
 
         async with db.execute(
-            "SELECT * FROM workspace_documents WHERE workspace_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM workspace_documents "
+            "WHERE workspace_id = ? AND file_type NOT IN ('website', 'social') "
+            "ORDER BY created_at DESC",
             (workspace_id,),
         ) as cur:
             rows = await cur.fetchall()
@@ -424,7 +470,8 @@ async def delete_document(
             )
 
         async with db.execute(
-            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ?",
+            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ? "
+            "AND file_type NOT IN ('website', 'social')",
             (doc_id, workspace_id),
         ) as cur:
             row = await cur.fetchone()
@@ -500,7 +547,8 @@ async def train_document(
             )
 
         async with db.execute(
-            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ?",
+            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ? "
+            "AND file_type NOT IN ('website', 'social')",
             (doc_id, workspace_id),
         ) as cur:
             row = await cur.fetchone()
@@ -559,7 +607,8 @@ async def document_status(
             )
 
         async with db.execute(
-            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ?",
+            "SELECT * FROM workspace_documents WHERE id = ? AND workspace_id = ? "
+            "AND file_type NOT IN ('website', 'social')",
             (doc_id, workspace_id),
         ) as cur:
             row = await cur.fetchone()
@@ -611,6 +660,9 @@ async def chat(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
             )
+        except HTTPException:
+            # Plan/quota errors (402) must reach the client unchanged.
+            raise
         except Exception as exc:
             log.error("Workspace chat error", error=str(exc), workspace_id=workspace_id)
             raise HTTPException(

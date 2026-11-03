@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
+from ..core.plans import get_plan
 from ..models.workspace import WorkspaceCreate, WorkspaceUpdate
 from ..storage import vector_store
 from ..storage.object_store import get_storage
@@ -49,16 +50,23 @@ async def create_workspace(
 ):
     workspace_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    # Resolve the launch default through the catalogue so an invalid env value
+    # can never put a workspace on a plan the rest of the app does not know.
+    initial_plan = get_plan(settings.default_workspace_plan)
     async with get_db() as db:
         await db.execute(
-            """INSERT INTO workspaces (id, name, description, system_prompt, owner_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO workspaces
+               (id, name, description, system_prompt, owner_id, created_at,
+                plan, plan_started_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 workspace_id,
                 payload.name,
                 payload.description,
                 payload.system_prompt,
                 user["id"],
+                now,
+                initial_plan.id,
                 now,
             ),
         )
@@ -148,7 +156,8 @@ async def delete_workspace(
         # Collect stored bytes locations BEFORE row deletes (Phase 2: fix the
         # orphan bug — local files and R2/S3 objects are removed too).
         async with db.execute(
-            "SELECT * FROM workspace_documents WHERE workspace_id = ?",
+            "SELECT * FROM workspace_documents "
+            "WHERE workspace_id = ? AND file_type NOT IN ('website', 'social')",
             (workspace_id,),
         ) as cur:
             doc_rows = [dict(r) for r in await cur.fetchall()]
@@ -222,6 +231,27 @@ async def delete_workspace(
         )
         await db.execute(
             "DELETE FROM developer_api_keys WHERE workspace_id = ?",
+            (workspace_id,),
+        )
+        # Subscription usage is workspace-owned; remove it with the workspace.
+        await db.execute(
+            "DELETE FROM usage_events WHERE workspace_id = ?", (workspace_id,)
+        )
+        # Website knowledge sources own pages, sync jobs, and the virtual
+        # workspace_documents rows removed below.
+        await db.execute(
+            "DELETE FROM website_pages WHERE workspace_id = ?", (workspace_id,)
+        )
+        await db.execute(
+            "DELETE FROM website_sync_jobs WHERE workspace_id = ?", (workspace_id,)
+        )
+        await db.execute(
+            "DELETE FROM website_sources WHERE workspace_id = ?", (workspace_id,)
+        )
+        # Social media sources are agent-scoped; remove them explicitly before
+        # the agent rows so their virtual documents cannot outlive them.
+        await db.execute(
+            "DELETE FROM social_media_sources WHERE workspace_id = ?",
             (workspace_id,),
         )
         await db.execute(

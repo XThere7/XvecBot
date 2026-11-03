@@ -14,6 +14,7 @@ from fastapi import HTTPException, status
 
 from ..core.agent_config import validate_agent_config
 from ..core.logging import get_logger
+from . import plan_service
 
 log = get_logger(__name__)
 
@@ -85,7 +86,11 @@ async def create_agent(
     Raises 404 if the workspace is missing or not owned by owner_id.
     Returns the full agent dict.
     """
-    await _require_owned_workspace(db, workspace_id, owner_id)
+    workspace = await _require_owned_workspace(db, workspace_id, owner_id)
+
+    # Plan gate: Free includes one agent, Standard five, Pro fifteen. Existing
+    # agents over the limit are never deleted — only new ones are refused.
+    await plan_service.assert_can_create_agent(db, workspace)
 
     # Validate and normalise the configuration before storing it.
     try:
@@ -252,6 +257,12 @@ async def delete_agent(
     """
     agent = await _get_agent_row(db, agent_id)
     await _require_owned_workspace(db, agent["workspace_id"], owner_id)
+
+    # Imported social media is agent-scoped knowledge. Remove its vectors and
+    # virtual documents before the source rows cascade with the agent.
+    from .social_media_service import remove_all_for_agent
+
+    await remove_all_for_agent(db, agent_id=agent_id)
 
     # Messages of every conversation belonging to this agent.
     await db.execute(

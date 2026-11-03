@@ -9,6 +9,7 @@ the workspace). The LLM is called through the OpenRouter generator, which
 accepts a per-call system prompt, history, model and temperature.
 """
 import asyncio
+import time
 from typing import Optional
 
 import aiosqlite
@@ -21,8 +22,12 @@ from ..llm.generator import build_generator
 from ..retrieval.hybrid_search import hybrid_search
 from ..retrieval.reranker import rerank
 from ..storage import sqlite as db_ops
-from . import conversation_service
-from .workspace_query_service import _build_sources, _filenames_for_chunks
+from . import conversation_service, plan_service
+from .workspace_query_service import (
+    KNOWLEDGE_SAFETY,
+    _build_sources,
+    _source_metadata_for_chunks,
+)
 
 log = get_logger(__name__)
 
@@ -44,14 +49,15 @@ async def _load_agent(db: aiosqlite.Connection, agent_id: str) -> dict:
 async def _retrieve_knowledge(
     db: aiosqlite.Connection,
     workspace_id: str,
+    agent_id: str,
     message: str,
 ) -> tuple[list, list[dict]]:
     """
-    Retrieve and rerank chunks for the message, scoped to the workspace.
+    Retrieve and rerank chunks for the message.
 
-    Same approach as workspace_query_service: embed -> hybrid search -> rerank.
-    Returns (reranked_chunks, sources). Both empty when the workspace has no
-    trained documents — the caller proceeds without context.
+    Workspace-wide documents are always included. Imported social media is
+    included only for this agent (`chunks.agent_id = agent_id`), so another
+    agent in the same workspace can never retrieve or cite it.
     """
     query_vector = await asyncio.to_thread(embed_query, message)
     hybrid_results = await hybrid_search(
@@ -60,6 +66,7 @@ async def _retrieve_knowledge(
         query_vector=query_vector,
         top_k=settings.retrieval_top_k,
         workspace_id=workspace_id,
+        agent_id=agent_id,
     )
 
     chunk_ids = [r.chunk_id for r in hybrid_results]
@@ -77,8 +84,8 @@ async def _retrieve_knowledge(
     if not reranked_chunks:
         return [], []
 
-    filenames = await _filenames_for_chunks(db, reranked_chunks)
-    sources = _build_sources(reranked_chunks, filenames)
+    metadata = await _source_metadata_for_chunks(db, reranked_chunks)
+    sources = _build_sources(reranked_chunks, metadata)
     return reranked_chunks, sources
 
 
@@ -101,7 +108,9 @@ def _assemble_system_prompt(agent: dict, context: str) -> str:
         parts.append(f"Always respond in {language}.")
 
     if context:
-        parts.append(f"Relevant knowledge:\n{context}")
+        parts.append(
+            f"{KNOWLEDGE_SAFETY}\n\nRelevant knowledge:\n{context}"
+        )
 
     return "\n\n".join(parts)
 
@@ -111,6 +120,7 @@ async def chat_with_agent(
     conversation_id: Optional[str],
     message: str,
     db: aiosqlite.Connection,
+    channel: str = "dashboard",
 ) -> dict:
     """
     Run one turn of an agent conversation.
@@ -122,10 +132,71 @@ async def chat_with_agent(
             "sources": [{"filename": str, "chunk_index": int}, ...],
             "model_used": str,
         }
+
+    ``channel`` is dashboard | widget | hosted | api and feeds the admin
+    usage analytics. Recording is fire-and-forget — chat latency and
+    reliability are unaffected if the usage write fails.
     """
+    from . import admin_service
+
+    started = time.perf_counter()
+    try:
+        return await _chat_with_agent_inner(
+            agent_id, conversation_id, message, db, channel=channel,
+            started=started,
+        )
+    except Exception as exc:
+        # Error row with whatever meta we can recover cheaply.
+        owner_id: str | None = None
+        workspace_id: str | None = None
+        model: str | None = None
+        try:
+            agent = await _load_agent(db, agent_id)
+            workspace_id = agent["workspace_id"]
+            model = agent["model"]
+            workspace = await plan_service.get_workspace(db, workspace_id)
+            owner_id = workspace["owner_id"] if workspace else None
+        except Exception:
+            pass
+        admin_service.record_usage_event(
+            user_id=owner_id,
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            channel=channel,
+            model=model,
+            status="error",
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            error_code=type(exc).__name__,
+        )
+        raise
+
+
+async def _chat_with_agent_inner(
+    agent_id: str,
+    conversation_id: Optional[str],
+    message: str,
+    db: aiosqlite.Connection,
+    *,
+    channel: str,
+    started: float,
+) -> dict:
+    from . import admin_service
+
     # 1. Load agent config
     agent = await _load_agent(db, agent_id)
     workspace_id = agent["workspace_id"]
+
+    # 1b. Account chat allowance. The counter is incremented here, before the
+    # conversation is touched or the LLM is called, so a visitor cannot get a
+    # free turn by racing the quota. AI-response analytics are still recorded
+    # separately after a successful answer.
+    workspace = await plan_service.get_workspace(db, workspace_id)
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+    await plan_service.assert_can_chat(db, workspace)
 
     # 2. Resolve or create the conversation
     is_new = conversation_id is None
@@ -153,7 +224,9 @@ async def chat_with_agent(
     history = history[:-1] if history else history
 
     # 5. Retrieve relevant knowledge from the agent's workspace
-    reranked_chunks, sources = await _retrieve_knowledge(db, workspace_id, message)
+    reranked_chunks, sources = await _retrieve_knowledge(
+        db, workspace_id, agent_id, message
+    )
     context = _format_context(reranked_chunks)
 
     # 6. Assemble the system prompt
@@ -176,6 +249,11 @@ async def chat_with_agent(
         db, conversation_id, role="assistant", content=answer, sources=sources
     )
 
+    # 8b. Analytics ledger: only successful answers are counted here. The
+    # monthly chat-message allowance was already incremented before generation,
+    # so a failed model call still consumes the message it attempted.
+    await plan_service.record_ai_response(db, workspace_id)
+
     # 9. Auto-title if this was a new conversation
     if is_new:
         await conversation_service.auto_title_conversation(
@@ -190,7 +268,18 @@ async def chat_with_agent(
         sources=len(sources),
     )
 
-    # 10. Return the response
+    # 10. Usage analytics (fire-and-forget; never affects the response).
+    admin_service.record_usage_event(
+        user_id=workspace["owner_id"],
+        workspace_id=workspace_id,
+        agent_id=agent_id,
+        channel=channel,
+        model=model_used or agent["model"],
+        status="ok",
+        latency_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+    # 11. Return the response
     return {
         "conversation_id": conversation_id,
         "answer": answer,

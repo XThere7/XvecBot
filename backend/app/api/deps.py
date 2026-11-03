@@ -3,6 +3,8 @@ api/deps.py
 Shared FastAPI dependencies — authentication, rate limiting, etc.
 Imported by individual routers via Depends().
 """
+from datetime import datetime, timezone
+
 from fastapi import Header, HTTPException, status
 
 from ..core.auth import decode_token
@@ -63,16 +65,42 @@ async def get_current_user(
 
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT id, email, hashed_password, is_active, created_at FROM users WHERE id = ?",
+            "SELECT id, email, hashed_password, is_active, created_at, "
+            "plan, trial_ends_at, password_changed_at, role, permissions, "
+            "suspended_at, suspended_reason, totp_enabled, totp_failed_at, "
+            "totp_failed_count FROM users WHERE id = ?",
             (user_id,),
         )
         row = await cur.fetchone()
 
-    if row is None or not row["is_active"]:
+    if row is None or not row["is_active"] or row["suspended_at"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return dict(row)
+    user = dict(row)
+
+    # Session invalidation after a password reset. Tokens minted before this
+    # feature shipped carry no `iat` and stay valid (documented behaviour) so
+    # the deployment never logs out a user who has not reset their password.
+    issued_at = payload.get("iat")
+    password_changed_at = user.get("password_changed_at")
+    if issued_at is not None and password_changed_at:
+        try:
+            changed = datetime.fromisoformat(str(password_changed_at).replace("Z", "+00:00"))
+            if changed.tzinfo is None:
+                changed = changed.replace(tzinfo=timezone.utc)
+            if datetime.fromtimestamp(float(issued_at), tz=timezone.utc) < changed:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except (TypeError, ValueError, OSError):
+            # A malformed timestamp must not brick authentication; fall
+            # through to the normal valid-user path.
+            pass
+
+    return user

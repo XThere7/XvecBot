@@ -49,6 +49,7 @@ async def hybrid_search(
     top_k: int = None,
     document_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> list[HybridResult]:
     """
     Fuse BM25 and vector search results using Reciprocal Rank Fusion.
@@ -70,7 +71,10 @@ async def hybrid_search(
 
     # Fetch corpus for BM25 (in-memory build), scoped to workspace/document
     all_chunks: list[Chunk] = await db_ops.get_all_chunks(
-        db, document_id=document_id, workspace_id=workspace_id
+        db,
+        document_id=document_id,
+        workspace_id=workspace_id,
+        agent_id=agent_id,
     )
     if not all_chunks:
         log.warning(
@@ -85,7 +89,12 @@ async def hybrid_search(
         query, all_chunks, top_k=top_k, workspace_id=workspace_id
     )
     vector_results: list[VectorResult] = await vector_search(
-        db, query_vector, top_k=top_k, document_id=document_id, workspace_id=workspace_id
+        db,
+        query_vector,
+        top_k=top_k,
+        document_id=document_id,
+        workspace_id=workspace_id,
+        agent_id=agent_id,
     )
 
     # Build rank maps: chunk_id -> rank

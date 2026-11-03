@@ -272,6 +272,7 @@ async def chat_for_public_agent(
     agent: dict,
     message: str,
     conversation_id: Optional[str],
+    channel: str = "widget",
 ) -> dict:
     """Sanitise and process one already-authorised visitor message."""
     cleaned = _sanitise_message(message)
@@ -291,6 +292,7 @@ async def chat_for_public_agent(
         conversation_id=conversation_id,
         message=cleaned,
         db=db,
+        channel=channel,
     )
 
 

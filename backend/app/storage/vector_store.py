@@ -74,6 +74,7 @@ async def search_similar(
     top_k: int = 20,
     document_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> list[tuple[str, float]]:
     """
     KNN similarity search over chunk_embeddings.
@@ -91,7 +92,15 @@ async def search_similar(
         from ..core.pg_pool import ensure_vector_codec
 
         await ensure_vector_codec(db.raw)
-        pg_query = """
+        agent_clause = ""
+        if workspace_id is not None:
+            if agent_id is not None:
+                agent_clause = (
+                    "AND (c.agent_id IS NULL OR c.agent_id = ?)"
+                )
+            else:
+                agent_clause = "AND c.agent_id IS NULL"
+        pg_query = f"""
             SELECT ce.chunk_id, (ce.embedding <=> ?) AS distance
             FROM chunk_embeddings ce
             JOIN chunks c ON c.id = ce.chunk_id
@@ -99,25 +108,29 @@ async def search_similar(
             WHERE (?::text IS NULL OR c.document_id = ?)
               AND (?::text IS NULL OR c.workspace_id = ?)
               AND (?::text IS NULL OR wd.status = 'ready')
+              {agent_clause}
             ORDER BY ce.embedding <=> ?
             LIMIT ?
         """
-        params = (
+        params = [
             query_vector,
             document_id, document_id,
             workspace_id, workspace_id,
             workspace_id,
-            query_vector,
-            top_k,
-        )
+        ]
+        if workspace_id is not None and agent_id is not None:
+            params.append(agent_id)
+        params.extend((query_vector, top_k))
         async with db.execute(pg_query, params) as cur:
             rows = await cur.fetchall()
         results = [(r["chunk_id"], float(r["distance"])) for r in rows]
         log.debug("Vector search complete (pg)", results=len(results))
         return results
     vec_bytes = _serialize_vector(query_vector)
-    filtering = bool(document_id) or bool(workspace_id)
-    fetch_k = top_k * 3 if filtering else top_k
+    filtering = bool(document_id) or bool(workspace_id) or bool(agent_id)
+    # Agent filtering happens in Python on SQLite, so over-fetch generously:
+    # another agent can own many embeddings in the same workspace.
+    fetch_k = top_k * 10 if filtering else top_k
 
     query = """
         SELECT ce.chunk_id, ce.distance
@@ -136,7 +149,7 @@ async def search_similar(
             chunk_id = r["chunk_id"]
             dist = r["distance"]
             async with db.execute(
-                """SELECT c.document_id, c.workspace_id,
+                """SELECT c.document_id, c.workspace_id, c.agent_id,
                           (SELECT status FROM workspace_documents WHERE id = c.doc_id) AS doc_status
                    FROM chunks c WHERE c.id = ?""",
                 (chunk_id,),
@@ -150,6 +163,13 @@ async def search_similar(
                 continue
             if workspace_id and chunk_row["doc_status"] != "ready":
                 continue
+            if workspace_id:
+                chunk_agent = chunk_row["agent_id"]
+                if agent_id is None:
+                    if chunk_agent is not None:
+                        continue
+                elif chunk_agent is not None and chunk_agent != agent_id:
+                    continue
             results.append((chunk_id, dist))
             if len(results) >= top_k:
                 break

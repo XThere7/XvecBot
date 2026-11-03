@@ -29,6 +29,7 @@ async def vector_search(
     top_k: int = None,
     document_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> list[VectorResult]:
     """
     Perform cosine similarity search over chunk embeddings.
@@ -57,6 +58,7 @@ async def vector_search(
         top_k=top_k,
         document_id=document_id,
         workspace_id=workspace_id,
+        agent_id=agent_id,
     )
 
     results = []

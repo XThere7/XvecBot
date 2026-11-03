@@ -23,7 +23,7 @@ from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
 from ..models.embed_token import EmbedSnippet, EmbedTokenCreate, EmbedTokenRead, EmbedTokenUpdate
-from ..services import agent_service
+from ..services import agent_service, plan_service
 from .deps import get_current_user
 
 log = get_logger(__name__)
@@ -178,6 +178,15 @@ async def create_token(
 ):
     async with get_db() as db:
         await _require_owned_agent(db, workspace_id, agent_id, user)
+        workspace = await plan_service.get_workspace(db, workspace_id)
+        if workspace is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found",
+            )
+        await plan_service.assert_can_create_embed_token(
+            db, workspace, agent_id
+        )
 
         token_id = str(uuid.uuid4())
         token_string = secrets.token_hex(32)

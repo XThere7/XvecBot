@@ -33,6 +33,13 @@ if _PG_TEST_URL:
 else:
     os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DIR}/test_rag.db"
 os.environ["UPLOAD_DIR"] = os.path.join(_TEST_DIR, "uploads")
+# Transactional email must never leave the process in the test suite: the
+# memory backend keeps messages in a list that the email tests inspect.
+os.environ["EMAIL_BACKEND"] = "memory"
+# Existing suites create several agents per workspace and issue developer API
+# keys. Run them on Pro so subscription limits do not interfere; the dedicated
+# billing tests explicitly downgrade a workspace to Free.
+os.environ["DEFAULT_WORKSPACE_PLAN"] = "pro"
 
 import pytest
 import pytest_asyncio
@@ -43,6 +50,16 @@ from ..core.database import init_db, get_db
 from ..core.config import settings
 
 _APP_TABLES = (
+    "usage_monthly",
+    "usage_events",
+    "website_sync_jobs",
+    "website_pages",
+    "website_sources",
+    "password_reset_tokens",
+    "plan_changes",
+    "payments",
+    "platform_settings",
+    "error_events",
     "messages",
     "conversations",
     "chunk_embeddings",
@@ -74,7 +91,7 @@ async def _isolated_db():
                 await db.execute("DELETE FROM alembic_version")
                 await db.execute(
                     "INSERT INTO alembic_version (version_num) VALUES (?)",
-                    ("0005_workspace_and_file_links",),
+                    ("0012_admin_panel",),
                 )
                 await db.commit()
             except Exception:

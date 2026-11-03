@@ -19,7 +19,7 @@ from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
 from ..models.embed_token import PublicAgentInfo
-from ..services import embed_service
+from ..services import admin_service, embed_service
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/public", tags=["Public Widget"])
@@ -93,11 +93,25 @@ class PublicChatRequest(BaseModel):
 # conversation_id.
 #   sources[] carries the *display* filename of the cited document
 #   (documents/workspace_documents.filename, e.g. "pricing.pdf") and its
-#   chunk_index. That is a label the merchant chose when uploading, it is
+#   chunk_index (and source_url for crawled website pages). That is a label
+#   the merchant chose when uploading, it is
 #   required for the widget to render citation links, and it is NOT the stored
-#   file_path. Audited: _filenames_for_chunks() selects only the filename
-#   column, so no server path can reach the public payload.
+#   file_path. Audited: _source_metadata_for_chunks() selects only the
+#   filename/url columns, so no server path can reach the public payload.
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _channel_for_origin(origin: str | None) -> str:
+    """widget vs hosted: the hosted chat page shares the public endpoints but
+    sends its own origin."""
+    from urllib.parse import urlparse
+
+    if origin:
+        host = urlparse(origin).hostname
+        hosted_host = urlparse(settings.hosted_base_url).hostname
+        if host and hosted_host and host == hosted_host:
+            return "hosted"
+    return "widget"
 
 
 @router.post("/chat", summary="Public widget chat (no auth)")
@@ -108,19 +122,26 @@ async def public_chat(
     origin = request.headers.get("origin")
 
     async with get_db() as db:
+        # Platform controls first: the emergency switch answers every public
+        # request with a friendly 503 before token validation reveals anything.
+        await admin_service.require_platform_available(db)
         # Validate token, agent state and Origin BEFORE consuming the per-token
         # bucket. Otherwise a blocked origin can deny service to the legitimate
         # customer site. The IP-scoped middleware remains the outer abuse gate.
         embed, agent = await embed_service.validate_public_request(
             db, payload.token, origin
         )
+        # Owner suspension stops this assistant with the same friendly 503.
+        await admin_service.require_owner_active(db, agent["workspace_id"])
         _check_rate_limit(payload.token)
         await embed_service.record_token_use(db, embed["id"])
+        channel = _channel_for_origin(origin)
         result = await embed_service.chat_for_public_agent(
             db=db,
             agent=agent,
             message=payload.message,
             conversation_id=payload.conversation_id,
+            channel=channel,
         )
 
     # Strip internal fields — the public surface exposes only these three.
@@ -138,6 +159,8 @@ async def public_agent_info(
 ):
     async with get_db() as db:
         agent = await embed_service.resolve_token(db, token)
+        await admin_service.require_platform_available(db)
+        await admin_service.require_owner_active(db, agent["workspace_id"])
     # icon_url is stored as a same-server path (/static/icons/…); the widget
     # runs on another origin, so hand it an absolute URL. Never expose a
     # filesystem path — stored values are validated to the /static/icons/
@@ -186,6 +209,8 @@ async def public_qr(token: str):
     async with get_db() as db:
         embed, agent = await embed_service.validate_public_request(db, token, None)
         _ = agent  # validity is the check; no agent fields leave this route.
+        await admin_service.require_platform_available(db)
+        await admin_service.require_owner_active(db, agent["workspace_id"])
         _check_rate_limit(f"qr:{token}")
         await embed_service.record_token_use(db, embed["id"])
     url = f"{settings.hosted_base_url.rstrip('/')}/chat/{token}"

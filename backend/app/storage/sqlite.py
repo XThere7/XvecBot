@@ -53,8 +53,16 @@ async def update_document_status(
 async def get_document(
     db: aiosqlite.Connection, doc_id: str
 ) -> Optional[DocumentRead]:
+    # Website pages have shadow `documents` rows for chunk FKs/retrieval.
+    # They are managed through the website API, never the document API.
     async with db.execute(
-        "SELECT * FROM documents WHERE id = ?", (doc_id,)
+        """SELECT d.* FROM documents d
+           WHERE d.id = ?
+             AND NOT EXISTS (SELECT 1 FROM website_pages wp WHERE wp.id = d.id)
+             AND NOT EXISTS (
+                 SELECT 1 FROM social_media_sources sms WHERE sms.id = d.id
+             )""",
+        (doc_id,),
     ) as cur:
         row = await cur.fetchone()
     if row is None:
@@ -71,7 +79,12 @@ async def get_document(
 
 async def list_documents(db: aiosqlite.Connection) -> list[DocumentRead]:
     async with db.execute(
-        "SELECT * FROM documents ORDER BY upload_date DESC"
+        """SELECT d.* FROM documents d
+           WHERE NOT EXISTS (SELECT 1 FROM website_pages wp WHERE wp.id = d.id)
+             AND NOT EXISTS (
+                 SELECT 1 FROM social_media_sources sms WHERE sms.id = d.id
+             )
+           ORDER BY d.upload_date DESC"""
     ) as cur:
         rows = await cur.fetchall()
     return [
@@ -88,6 +101,19 @@ async def list_documents(db: aiosqlite.Connection) -> list[DocumentRead]:
 
 
 async def delete_document(db: aiosqlite.Connection, doc_id: str) -> bool:
+    # A website page is deleted by disconnecting its source, not through the
+    # generic document API. Reject the shadow row so its source metadata and
+    # page state cannot be left behind in an inconsistent state.
+    async with db.execute(
+        "SELECT 1 FROM website_pages WHERE id = ?", (doc_id,)
+    ) as cur:
+        if await cur.fetchone() is not None:
+            return False
+    async with db.execute(
+        "SELECT 1 FROM social_media_sources WHERE id = ?", (doc_id,)
+    ) as cur:
+        if await cur.fetchone() is not None:
+            return False
     async with db.execute(
         "SELECT id FROM documents WHERE id = ?", (doc_id,)
     ) as cur:
@@ -109,9 +135,28 @@ async def insert_chunk(
     text: str,
     workspace_id: Optional[str] = None,
     doc_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> str:
     chunk_id = str(uuid.uuid4())
-    if workspace_id is not None or doc_id is not None:
+    if agent_id is not None:
+        # Agent-scoped knowledge (currently imported social media). NULL
+        # agent_id means workspace-wide knowledge shared by every agent.
+        await db.execute(
+            """INSERT INTO chunks
+               (id, document_id, page, chunk_index, text, workspace_id, doc_id, agent_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                chunk_id,
+                document_id,
+                page,
+                chunk_index,
+                text,
+                workspace_id,
+                doc_id,
+                agent_id,
+            ),
+        )
+    elif workspace_id is not None or doc_id is not None:
         # Multi-tenant metadata (requires chunks.workspace_id / chunks.doc_id columns)
         await db.execute(
             """INSERT INTO chunks (id, document_id, page, chunk_index, text, workspace_id, doc_id)
@@ -156,6 +201,7 @@ async def get_all_chunks(
     db: aiosqlite.Connection,
     document_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> list[Chunk]:
     if document_id:
         async with db.execute(
@@ -165,14 +211,25 @@ async def get_all_chunks(
             rows = await cur.fetchall()
     elif workspace_id:
         # Multi-tenant scope: only chunks tagged for this workspace whose
-        # source document is fully trained (status='ready').
-        async with db.execute(
-            """SELECT c.* FROM chunks c
-               JOIN workspace_documents wd ON wd.id = c.doc_id
-               WHERE wd.workspace_id = ? AND wd.status = 'ready'
-               ORDER BY c.document_id, c.page, c.chunk_index""",
-            (workspace_id,),
-        ) as cur:
+        # source document is fully trained (status='ready'). When an agent is
+        # given, include workspace-wide knowledge (agent_id NULL) plus that
+        # agent's imported media. Workspace chat passes no agent and therefore
+        # never sees agent-private media.
+        if agent_id is not None:
+            query = """SELECT c.* FROM chunks c
+                       JOIN workspace_documents wd ON wd.id = c.doc_id
+                       WHERE wd.workspace_id = ? AND wd.status = 'ready'
+                         AND (c.agent_id IS NULL OR c.agent_id = ?)
+                       ORDER BY c.document_id, c.page, c.chunk_index"""
+            params = (workspace_id, agent_id)
+        else:
+            query = """SELECT c.* FROM chunks c
+                       JOIN workspace_documents wd ON wd.id = c.doc_id
+                       WHERE wd.workspace_id = ? AND wd.status = 'ready'
+                         AND c.agent_id IS NULL
+                       ORDER BY c.document_id, c.page, c.chunk_index"""
+            params = (workspace_id,)
+        async with db.execute(query, params) as cur:
             rows = await cur.fetchall()
     else:
         async with db.execute(

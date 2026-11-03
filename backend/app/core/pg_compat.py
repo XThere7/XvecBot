@@ -146,7 +146,9 @@ class PgConn:
             pg_sql = translate_qmarks(sql)
             args = tuple(params or ())
             stripped = pg_sql.strip().upper()
-            if stripped.startswith(("SELECT", "WITH", "TABLE", "EXPLAIN")):
+            if stripped.startswith(("SELECT", "WITH", "TABLE", "EXPLAIN")) or (
+                "RETURNING" in stripped
+            ):
                 rows = await self._conn.fetch(pg_sql, *args)
                 return PgCursor(rows)
             await self._conn.execute(pg_sql, *args)

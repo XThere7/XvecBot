@@ -298,7 +298,16 @@ function onSubmit(e) {
     .then(function (r) {
       dropTyping(typing);
       if (r.s !== 200) {
-        addError(r.s === 429 ? ERR.rate : (r.s === 403 || r.s === 401) ? ERR.denied : ERR.oops);
+        // 402 means the workspace has reached its monthly allowance. Visitors
+        // get neutral "unavailable" copy; the merchant sees the real reason in
+        // the dashboard, so no plan details leak into the widget.
+        addError(
+          r.s === 429
+            ? ERR.rate
+            : (r.s === 401 || r.s === 402 || r.s === 403)
+              ? ERR.denied
+              : ERR.oops
+        );
         return;
       }
       if (r.d && r.d.conversation_id) conversationId = r.d.conversation_id;

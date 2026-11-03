@@ -12,6 +12,7 @@ Start dev server:
 API docs (auto-generated):
   http://localhost:8000/docs
 """
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,12 +21,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .api import agents, api_keys, auth, developer, documents, embed_tokens, health, public, query, upload, workspaces
+from .api import (
+    agents,
+    api_keys,
+    auth,
+    billing,
+    developer,
+    documents,
+    embed_tokens,
+    health,
+    password_reset,
+    public,
+    query,
+    social_media,
+    upload,
+    websites,
+    workspaces,
+)
+from .api.admin import router as admin_router
 from .core.config import settings
-from .core.database import init_db
+from .core.database import get_db, init_db
 from .core.logging import get_logger, setup_logging
 from .core.middleware import PublicSurfaceMiddleware
 from .core.rate_limit import RateLimitMiddleware
+from .core.scheduler import run_scheduler
 
 # Initialise structured logging first
 setup_logging()
@@ -57,6 +76,25 @@ async def lifespan(app: FastAPI):
     # Create DB tables + load sqlite-vec extension
     await init_db()
 
+    # A crawl runs as an in-process background task. If the previous process
+    # exited mid-crawl, its source would stay claimed forever (blocking manual
+    # refreshes/deletes and scheduler dispatch). Single-worker assumption.
+    try:
+        from .services.website_training_service import recover_stale_syncs
+
+        await recover_stale_syncs()
+    except Exception as exc:  # pragma: no cover - startup must not be blocked
+        log.warning("Could not recover stale website syncs", error=str(exc))
+
+    # Social media imports also run in-process. Recover rows left in-flight by
+    # a previous process so extraction/indexing statuses cannot stay stuck.
+    try:
+        from .services.social_media_service import recover_stale_imports
+
+        await recover_stale_imports()
+    except Exception as exc:  # pragma: no cover - startup must not be blocked
+        log.warning("Could not recover stale social media imports", error=str(exc))
+
     # Warm up embedding model (loads weights into memory on first call)
     # Non-fatal: if model download fails / no network, log and continue
     # so /health and /docs remain usable without embeddings.
@@ -68,10 +106,33 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("Embedding warmup skipped — will lazy-load on first query", error=str(exc))
 
+    # Scheduled website refresh loop. In-process by design (single uvicorn
+    # worker, like the existing rate limiter) — no Redis/Celery dependency.
+    scheduler_task = asyncio.create_task(run_scheduler(app))
+
+    # Retention: purge usage rows older than the configured window.
+    try:
+        from .services import admin_service
+
+        async with get_db() as db:
+            purged = await admin_service.purge_old_usage_events(db)
+        if purged:
+            log.info("Usage events purged", count=purged)
+    except Exception as exc:
+        log.warning("Usage retention purge skipped", error=str(exc))
+
     log.info("Application startup complete")
     yield
 
     log.info("Application shutting down")
+
+    # Stop the scheduler first so no new refresh jobs are dispatched while the
+    # database pool is closing.
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
 
     # Release the Postgres pool so connections are closed gracefully instead
     # of being torn down with the process.
@@ -130,11 +191,35 @@ def create_app() -> FastAPI:
         per_minute=settings.rate_limit_per_minute,
     )
 
+    # Record unhandled server errors for the admin panel. Fire-and-forget:
+    # the request path and exception are captured, then the error is re-raised
+    # so existing behaviour (500 handling) is unchanged.
+    @app.middleware("http")
+    async def capture_unhandled_errors(request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:  # pragma: no cover - runs on every error
+            from .services import admin_service
+
+            status_code = getattr(exc, "status_code", None)
+            admin_service.record_error_event(
+                path=request.url.path,
+                status=int(status_code) if status_code else 500,
+                exception_type=type(exc).__name__,
+                message=str(exc)[:300],
+            )
+            raise
+
     # ── Routers ───────────────────────────────────────────────────────────────
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(password_reset.router)
+    app.include_router(admin_router)
     app.include_router(workspaces.router)
+    app.include_router(billing.router)
     app.include_router(documents.router)
+    app.include_router(websites.router)
+    app.include_router(social_media.router)
     app.include_router(agents.router)
     app.include_router(public.router)
     app.include_router(embed_tokens.router)

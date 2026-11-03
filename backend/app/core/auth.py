@@ -26,11 +26,21 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(data: dict) -> str:
-    """Sign a JWT with the given payload, expiring per ACCESS_TOKEN_EXPIRE_DAYS."""
+def create_access_token(data: dict, expire_days: float | None = None) -> str:
+    """
+    Sign a JWT with the given payload, expiring per ACCESS_TOKEN_EXPIRE_DAYS
+    (or ``expire_days``, used for shorter admin sessions).
+
+    Every token carries an ``iat`` claim so ``get_current_user`` can reject
+    sessions issued before the account's last password reset (see
+    ``users.password_changed_at``). Tokens created before this feature shipped
+    have no ``iat`` and are treated as still-valid — deploying this change
+    never logs out an existing user.
+    """
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire})
+    now = datetime.now(timezone.utc)
+    days = settings.ACCESS_TOKEN_EXPIRE_DAYS if expire_days is None else expire_days
+    to_encode.update({"exp": now + timedelta(days=days), "iat": now})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 

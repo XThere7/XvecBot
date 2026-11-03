@@ -43,9 +43,86 @@ class Settings(BaseSettings):
     # widget calls, so merchants never have to allowlist the platform's own
     # dashboard domain on top of their customer sites.
     hosted_base_url: str = "https://app.botbase.tz"
+    # Plan assigned to newly created workspaces. Production stays on "free"
+    # during launch; the test suite overrides it to "pro" so unrelated suites
+    # are not constrained by Free-tier agent/API limits.
+    default_workspace_plan: str = "free"
     # Point customer snippets at the minified bundle built by
     # scripts/build_widget.py. Set false to hand out the readable source.
     widget_minified: bool = True
+
+    # ── Email ────────────────────────────────────────────────────────────────
+    # Pluggable transactional mail. Backends: file | memory | smtp | console.
+    # `file` writes .eml messages into EMAIL_OUTBOX_DIR (dev + verification).
+    # `memory` keeps messages in-process (unit tests only).
+    # `console` prints a header-only summary and refuses to run in production
+    # (DEBUG=false). `smtp` sends through the platform's real mailbox.
+    email_backend: str = "file"
+    email_outbox_dir: str = "./data/outbox"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_security: str = "starttls"  # starttls | ssl | none
+    email_from_address: str = "no-reply@botbase.local"
+    email_from_name: str = "BotBase"
+    email_reply_to: str = ""
+    # Public product URLs used in transactional mail. FRONTEND_URL is the
+    # dashboard origin (falls back to HOSTED_BASE_URL); DOCS_URL is the public
+    # docs site (falls back to <frontend>/docs); SUPPORT_EMAIL falls back to
+    # EMAIL_REPLY_TO / EMAIL_FROM_ADDRESS.
+    frontend_url: str = ""
+    docs_url: str = ""
+    support_email: str = ""
+
+    @property
+    def resolved_frontend_url(self) -> str:
+        return (self.frontend_url or self.hosted_base_url).strip().rstrip("/")
+
+    @property
+    def resolved_dashboard_url(self) -> str:
+        """Absolute URL of the dashboard sign-in route used in mail buttons."""
+        return f"{self.resolved_frontend_url}/dashboard"
+
+    @property
+    def resolved_docs_url(self) -> str:
+        if (self.docs_url or "").strip():
+            return self.docs_url.strip().rstrip("/")
+        return f"{self.resolved_frontend_url}/docs"
+
+    @property
+    def resolved_support_email(self) -> str:
+        return (self.support_email or self.email_reply_to or self.email_from_address).strip()
+
+    @property
+    def resolved_reply_to(self) -> str:
+        return (self.email_reply_to or self.email_from_address).strip()
+
+    # ── Password reset ──────────────────────────────────────────────────────
+    # Single-use reset links expire after this many minutes. The value is read
+    # by the service so emails and validation can never disagree.
+    password_reset_token_ttl_minutes: int = 30
+    # In-process hourly buckets for POST /auth/forgot-password (per-worker;
+    # see core/rate_limit.py for the scaling note). Never tuned so low that a
+    # legitimate user cannot receive a second link when the first mail fails.
+    password_reset_max_per_email_per_hour: int = 5
+    password_reset_max_per_ip_per_hour: int = 20
+
+    # ── Admin panel ─────────────────────────────────────────────────────────
+    # URL prefix for the admin panel (API and UI share this obfuscated path,
+    # e.g. /bbx765adm). Change it per deployment; the old /admin prefix is
+    # deliberately not mounted.
+    admin_route_prefix: str = "/bbx765adm"
+    # Admin sessions are shorter than ordinary user sessions.
+    admin_session_expire_hours: int = 8
+    # Admin sign-in attempts per email per 15 minutes.
+    admin_login_max_per_email_per_15m: int = 10
+    # TOTP attempts per account per 15 minutes.
+    totp_max_attempts_per_15m: int = 5
+    # Admin invite (set-password) links expire after this many minutes.
+    admin_invite_ttl_minutes: int = 60
+    # usage_events rows older than this many days are purged at startup.
+    usage_events_retention_days: int = 90
 
     # ── Security ─────────────────────────────────────────────────────────────
     api_key: str = "dev-key"

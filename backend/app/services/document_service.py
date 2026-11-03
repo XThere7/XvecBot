@@ -126,6 +126,16 @@ async def delete_document_with_data(
 
     from ..storage.vector_store import delete_embeddings_for_document
 
+    # Website pages own their shadow `documents` row. They must be removed by
+    # disconnecting the website source; otherwise deleting the shadow here
+    # would leave an "indexed" page with no chunks. Check before touching the
+    # vector index.
+    async with db.execute(
+        "SELECT 1 FROM website_pages WHERE id = ?", (doc_id,)
+    ) as cur:
+        if await cur.fetchone() is not None:
+            return False
+
     # Read the row first: the file path is needed after the row is gone.
     stored_path: Optional[str] = None
     try:

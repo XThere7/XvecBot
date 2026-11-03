@@ -14,13 +14,13 @@ import time
 from collections import defaultdict
 from typing import Optional
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ..core.database import get_db
 from ..core.logging import get_logger
-from ..services import agent_chat_service, api_key_service
+from ..services import admin_service, agent_chat_service, api_key_service
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["Developer API"])
@@ -102,6 +102,13 @@ async def dev_list_agents(x_api_key: Optional[str] = Header(None, alias="X-API-K
         record = await _require_dev_key(x_api_key, db)
         if isinstance(record, JSONResponse):
             return record
+        # Platform controls: emergency switch and owner suspension stop the
+        # developer API with a friendly response.
+        try:
+            await admin_service.require_platform_available(db)
+            await admin_service.require_owner_active(db, record["workspace_id"])
+        except HTTPException as exc:
+            return _dev_error(exc.status_code, str(exc.detail))
         async with db.execute(
             "SELECT * FROM agents WHERE workspace_id = ? AND is_active = 1 "
             "ORDER BY created_at DESC",
@@ -176,6 +183,13 @@ async def dev_chat(
                 f"Agent {payload.agent_id} does not belong to this API key's workspace.",
             )
 
+        # 3. Platform controls: emergency switch and owner suspension.
+        try:
+            await admin_service.require_platform_available(db)
+            await admin_service.require_owner_active(db, record["workspace_id"])
+        except HTTPException as exc:
+            return _dev_error(exc.status_code, str(exc.detail))
+
         # 3. Optional per-agent restriction on the key itself.
         if record["allowed_agents"] is not None and payload.agent_id not in set(
             record["allowed_agents"]
@@ -191,14 +205,50 @@ async def dev_chat(
                 conversation_id=payload.conversation_id,
                 message=message,
                 db=db,
+                channel="api",
             )
         except Exception as exc:
             # Foreign conversation_id surfaces from chat_with_agent — map to
-            # the developer contract without leaking internals.
+            # the developer contract without leaking internals. Quota errors
+            # (402) keep their structured fields so integrators can back off
+            # until the reset date instead of retrying a doomed request.
             from fastapi import HTTPException as _HTTPException
 
             if isinstance(exc, _HTTPException) and exc.status_code == 404:
                 return _dev_error(404, "Conversation not found.")
+            if isinstance(exc, _HTTPException) and exc.status_code == 402:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                return _dev_error(
+                    402,
+                    detail.get(
+                        "message", "This workspace has reached its plan limit."
+                    ),
+                    code=detail.get("code", "plan_limit_reached"),
+                    resource=detail.get("resource"),
+                    used=detail.get("used"),
+                    limit=detail.get("limit"),
+                    resets_at=detail.get("resets_at"),
+                    plan=detail.get("plan"),
+                )
+            # The shared chat path raises 429 for an exhausted monthly
+            # allowance (the dashboard expects that code). On the developer
+            # API a quota is not a rate limit: expose it as the documented
+            # 402 with structured usage fields so callers do not retry it.
+            if isinstance(exc, _HTTPException) and exc.status_code == 429:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                if detail.get("code") == "chat_messages_limit_reached":
+                    return _dev_error(
+                        402,
+                        detail.get(
+                            "message",
+                            "This workspace has reached its monthly chat allowance.",
+                        ),
+                        code=detail.get("code", "chat_messages_limit_reached"),
+                        resource=detail.get("resource", "chat_messages"),
+                        used=detail.get("used"),
+                        limit=detail.get("limit"),
+                        plan=detail.get("plan"),
+                    )
             log.error("Developer chat failed", error=str(exc))
             return _dev_error(
                 500, "An internal error occurred. Please try again."
@@ -207,7 +257,15 @@ async def dev_chat(
     return {
         "answer": result["answer"],
         "citations": [
-            {"source": s.get("filename", "unknown"), "chunk_index": s.get("chunk_index", 0)}
+            {
+                "source": s.get("filename", "unknown"),
+                "chunk_index": s.get("chunk_index", 0),
+                **(
+                    {"source_url": s["source_url"]}
+                    if s.get("source_url")
+                    else {}
+                ),
+            }
             for s in (result.get("sources") or [])
         ],
         "conversation_id": result["conversation_id"],

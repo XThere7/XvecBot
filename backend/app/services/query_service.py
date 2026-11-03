@@ -13,6 +13,7 @@ from ..graph.workflow import run_rag_pipeline
 from ..llm.generator import build_generator
 from ..models.query import QueryRequest, QueryResponse
 from ..storage import sqlite as db_ops
+from .workspace_query_service import source_urls_for_chunks
 
 log = get_logger(__name__)
 
@@ -120,6 +121,32 @@ async def process_query(
         document_id=request.document_id,
         workspace_id=workspace_id,
     )
+
+    # Attach website source URLs to citations. The legacy graph builds
+    # citations without knowing about the website tables, so enrich them here
+    # before persistence. Uploaded-document citations are unchanged.
+    try:
+        citations = final_state.get("citations") or []
+        chunk_ids = [
+            c.get("chunk_id") if isinstance(c, dict) else getattr(c, "chunk_id", None)
+            for c in citations
+        ]
+        urls = await source_urls_for_chunks(
+            db, [chunk_id for chunk_id in chunk_ids if chunk_id]
+        )
+        for citation in citations:
+            chunk_id = (
+                citation.get("chunk_id")
+                if isinstance(citation, dict)
+                else getattr(citation, "chunk_id", None)
+            )
+            if chunk_id in urls:
+                if isinstance(citation, dict):
+                    citation["source_url"] = urls[chunk_id]
+                else:
+                    citation.source_url = urls[chunk_id]
+    except Exception as exc:  # citation enrichment must never fail an answer
+        log.warning("Could not attach website source URLs", error=str(exc))
 
     # Persist assistant message
     await db_ops.insert_message(

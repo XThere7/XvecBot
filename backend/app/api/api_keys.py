@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from ..core.database import get_db
 from ..core.logging import get_logger
-from ..services import api_key_service
+from ..services import api_key_service, plan_service
 from .deps import get_current_user
 from .workspaces import _get_owned_workspace
 
@@ -59,6 +59,9 @@ async def create_key(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Workspace not found",
             )
+        # Developer API is available on Standard (3 keys) and Pro (unlimited);
+        # Free has no developer API access. Existing keys are grandfathered.
+        await plan_service.assert_can_create_api_key(db, workspace)
         record, full_key = await api_key_service.create_api_key(
             db,
             user_id=user["id"],
