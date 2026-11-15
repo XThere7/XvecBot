@@ -1,9 +1,10 @@
 # BotBase — VPS runbook
 
 Everything needed to run the production stack on one cheap VPS
-(Hetzner CX22 ≈ €4/month) with PostgreSQL + pgvector, the API, Caddy for
-TLS, and the dashboard (landing, pricing, docs, dashboard, hosted chat and
-the admin panel) on Vercel. Transactional email goes out through Resend.
+(Contabo Cloud VPS 4 — 4 vCPU / 8 GB / 100 GB, ≈ €5–6/month) with
+PostgreSQL + pgvector, the API, Caddy for TLS, and the dashboard (landing,
+pricing, docs, dashboard, hosted chat and the admin panel) on Vercel.
+Transactional email goes out through Resend.
 
 The long-form version of this (architecture, costs, alternatives, growth
 path) is in `production.md` at the repository root.
@@ -199,15 +200,15 @@ once before you have real customers.
 - The compose healthchecks are what `depends_on` and the load balancer use.
 - Add an external uptime check on `https://api.<domain>/health/ready`
   (a free external checker is enough — the box can die without noticing).
-- Watch disk usage: `df -h` (a 40 GB disk fills with images + Postgres +
-  logs). Log rotation is configured in the compose file (10 MB × 3 per
-  service).
+- Watch disk usage: `df -h` (100 GB is comfortable, but images + Postgres
+  + logs still grow). Log rotation is configured in the compose file
+  (10 MB × 3 per service).
 
 ## 10. Cost control
 
 | Item | Cost |
 |---|---|
-| VPS (2 vCPU / 4 GB) | ≈ €4/month |
+| VPS (Contabo Cloud VPS 4 — 4 vCPU / 8 GB / 100 GB) | ≈ €5–6/month |
 | PostgreSQL in the same container | €0 |
 | Cloudflare R2 (10 GB free, no egress fees) | €0 |
 | Cloudflare DNS | €0 |
