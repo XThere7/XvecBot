@@ -185,7 +185,7 @@ services:
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN to the API hostname, e.g. api.yourdomain.com}
       ACME_EMAIL: ${ACME_EMAIL:-ops@yourdomain.com}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     logging: *logging
