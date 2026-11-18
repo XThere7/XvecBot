@@ -103,6 +103,10 @@ async def get_current_user(
             changed = datetime.fromisoformat(str(password_changed_at).replace("Z", "+00:00"))
             if changed.tzinfo is None:
                 changed = changed.replace(tzinfo=timezone.utc)
+            # JWT `iat` is encoded at whole-second precision. Truncate the
+            # database timestamp too, otherwise a token minted immediately
+            # after a reset can appear older than the reset itself.
+            changed = changed.replace(microsecond=0)
             if datetime.fromtimestamp(float(issued_at), tz=timezone.utc) < changed:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
