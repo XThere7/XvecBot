@@ -1,0 +1,39 @@
+$GREETING
+
+Welcome to $BRAND!
+
+We're excited to have you on board.
+
+$BRAND helps you build and deploy AI-powered assistants that understand your
+business, answer customer questions, and make your work easier.
+
+Your account is ready, and you can start exploring the platform.
+$TRIAL_LINE
+
+What's next?
+1. Sign in to your $BRAND dashboard.
+2. Create your first AI agent.
+3. Upload your business documents or connect your knowledge sources.
+4. Customize your agent and deploy it to your website.
+
+Need help getting started?
+We've prepared documentation to guide you through the platform, step by step.
+
+Explore $BRAND Documentation:
+$DOCS_URL
+
+Open My $BRAND Dashboard:
+$DASHBOARD_URL
+
+We're happy to have you with us. If you need assistance, feel free to contact
+our support team:
+$SUPPORT
+
+Welcome aboard!
+
+The $BRAND Team
+
+Build smarter. Automate better. Grow with AI.
+
+Contact support: $SUPPORT_MAILTO
+You received this email because you created a $BRAND account.

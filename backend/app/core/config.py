@@ -136,6 +136,11 @@ class Settings(BaseSettings):
     # prod compose sets RATE_LIMIT_ENABLED=true. Scoped to /auth/* + /public/*.
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
+    # Legacy single-tenant/global API (/api/v1/query, /api/v1/documents). It
+    # authenticates with one process-wide API_KEY and is not workspace-scoped,
+    # so production disables it. Kept true by default for the historical test
+    # suite and local compatibility.
+    enable_legacy_api: bool = True
     # Log verbosity override ("DEBUG"/"INFO"/"WARNING"/"ERROR"). Empty means
     # derived from DEBUG (DEBUG=true → DEBUG else INFO).
     log_level: str = ""
@@ -145,6 +150,14 @@ class Settings(BaseSettings):
     def secrets_are_default(self) -> bool:
         """True when SECRET_KEY is still an insecure placeholder."""
         return (self.SECRET_KEY or "").strip() in self.INSECURE_SECRET_DEFAULTS
+
+    def api_key_is_insecure(self) -> bool:
+        """True when the legacy process-wide API_KEY is empty or a placeholder."""
+        return (self.api_key or "").strip() in (
+            "",
+            "dev-key",
+            "your-secret-api-key-change-in-production",
+        )
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./data/rag.db"

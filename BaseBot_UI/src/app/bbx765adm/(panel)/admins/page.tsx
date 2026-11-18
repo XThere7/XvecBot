@@ -36,12 +36,21 @@ export default function AdminAdminsPage() {
   async function createAdmin() {
     if (!email.trim()) return;
     const password = window.prompt("Your password to confirm:") || "";
+    if (!password) return;
+    const code = window.prompt(
+      "Your 6-digit 2FA code (leave blank if 2FA is not enabled):",
+    ) || "";
     setBusy(true);
     setNote(null);
     try {
       await apiPost(
         `${ADMIN_HOME}/admins`,
-        { email: email.trim(), preset, reauth_password: password },
+        {
+          email: email.trim(),
+          preset,
+          reauth_password: password,
+          reauth_code: code,
+        },
         { skipAuthRedirect: true },
       );
       setEmail("");

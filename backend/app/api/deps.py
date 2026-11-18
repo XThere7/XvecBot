@@ -55,6 +55,16 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # The 5-minute two-factor challenge is deliberately a distinct token type.
+    # It may only be exchanged at /auth/login/totp; treating it as an access
+    # token would let a password-only attacker skip the second factor.
+    if payload.get("type") not in (None, "access"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(
@@ -67,8 +77,9 @@ async def get_current_user(
         cur = await db.execute(
             "SELECT id, email, hashed_password, is_active, created_at, "
             "plan, trial_ends_at, password_changed_at, role, permissions, "
-            "suspended_at, suspended_reason, totp_enabled, totp_failed_at, "
-            "totp_failed_count FROM users WHERE id = ?",
+            "suspended_at, suspended_reason, totp_enabled, totp_secret, "
+            "totp_failed_at, totp_failed_count, last_login_at "
+            "FROM users WHERE id = ?",
             (user_id,),
         )
         row = await cur.fetchone()

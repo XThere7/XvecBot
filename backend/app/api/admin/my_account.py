@@ -29,6 +29,7 @@ class PasswordBody(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=255)
     new_password: str = Field(..., min_length=8, max_length=255)
     confirm_password: str | None = None
+    reauth_code: str = Field(default="", max_length=32)
 
 
 class TotpVerifyBody(BaseModel):
@@ -75,7 +76,9 @@ async def change_password(
         and body.confirm_password != body.new_password
     ):
         raise HTTPException(status_code=400, detail="New passwords do not match.")
-    if not verify_reauth(user, body.current_password, None):
+    if not verify_reauth(
+        user, body.current_password, body.reauth_code or None
+    ):
         raise HTTPException(status_code=403, detail="Current password is incorrect.")
     now = datetime.now(timezone.utc).isoformat()
     async with get_db() as db:

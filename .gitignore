@@ -72,6 +72,8 @@ go-live-hosting-plan.md
 # procedure). Drop these two lines if you want them local-only as well.
 !requirements.txt
 !BaseBot_UI/e2e/catalogue.txt
+# Transactional-email plain-text parts are required at runtime.
+!backend/app/emails/*.txt
 !deploy/README.md
 !deploy/restore.md
 # ── Marketing video library (local only — never committed or deployed) ──────

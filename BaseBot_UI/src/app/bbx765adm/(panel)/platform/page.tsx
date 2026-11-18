@@ -26,12 +26,21 @@ export default function AdminPlatformPage() {
 
   async function save(patch: Partial<PlatformSettings>, reason: string) {
     const password = window.prompt("Your password to confirm:") || "";
+    if (!password) return;
+    const code = window.prompt(
+      "Your 6-digit 2FA code (leave blank if 2FA is not enabled):",
+    ) || "";
     setBusy(true);
     setNote(null);
     try {
       await apiPut(
         `${ADMIN_HOME}/platform/settings`,
-        { ...patch, reason, reauth_password: password },
+        {
+          ...patch,
+          reason,
+          reauth_password: password,
+          reauth_code: code,
+        },
         { skipAuthRedirect: true },
       );
       load();

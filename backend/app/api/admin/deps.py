@@ -106,8 +106,10 @@ async def verify_reauth(
     """Re-authentication before sensitive actions: password (+ TOTP if on)."""
     if not password or not verify_password(password, user.get("hashed_password", "")):
         return False
-    if user.get("totp_enabled") and user.get("totp_secret"):
-        secret = totp.decrypt_secret(user["totp_secret"])
+    if user.get("totp_enabled"):
+        # Fail closed: if 2FA is enabled but the encrypted seed is missing or
+        # corrupt, a password alone must never satisfy re-authentication.
+        secret = totp.decrypt_secret(user.get("totp_secret") or "")
         if not secret or not code or not totp.verify_code(secret, code):
             return False
     return True

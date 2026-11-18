@@ -41,6 +41,7 @@ export default function AdminMyAccountPage() {
           current_password: form.current.value,
           new_password: form.next.value,
           confirm_password: form.confirm.value,
+          reauth_code: form.code.value,
         },
         { skipAuthRedirect: true },
       );
@@ -193,6 +194,14 @@ export default function AdminMyAccountPage() {
           required
           placeholder="Confirm new password"
           autoComplete="new-password"
+          className="h-9 rounded-sm border border-strong bg-inset px-2.5 text-sm"
+        />
+        <input
+          name="code"
+          type="text"
+          inputMode="numeric"
+          placeholder="6-digit 2FA code (blank if not enabled)"
+          autoComplete="one-time-code"
           className="h-9 rounded-sm border border-strong bg-inset px-2.5 text-sm"
         />
         <button

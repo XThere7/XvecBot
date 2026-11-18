@@ -73,6 +73,8 @@ services:
       UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
       RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      # Legacy global API is not tenant-scoped. Production disables it.
+      ENABLE_LEGACY_API: ${ENABLE_LEGACY_API:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to postgresql://botbase:<pw>@db:5432/botbase}
       PG_POOL_MIN_SIZE: ${PG_POOL_MIN_SIZE:-2}

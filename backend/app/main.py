@@ -72,6 +72,11 @@ async def lifespan(app: FastAPI):
             "Refusing to start: SECRET_KEY is still the insecure default. "
             "Set a 32+ byte SECRET_KEY env var (DEBUG=false requires it)."
         )
+    if not settings.debug and settings.api_key_is_insecure():
+        raise RuntimeError(
+            "Refusing to start: API_KEY is still empty or a placeholder. "
+            "Set a strong API_KEY env var (DEBUG=false requires it)."
+        )
 
     # Create DB tables + load sqlite-vec extension
     await init_db()
@@ -223,8 +228,11 @@ def create_app() -> FastAPI:
     app.include_router(agents.router)
     app.include_router(public.router)
     app.include_router(embed_tokens.router)
-    app.include_router(upload.router, prefix="/api/v1")
-    app.include_router(query.router,  prefix="/api/v1")
+    # Legacy global API. Disabled in production because its single API_KEY
+    # is not tenant-scoped; keep available locally for the historical suite.
+    if settings.enable_legacy_api:
+        app.include_router(upload.router, prefix="/api/v1")
+        app.include_router(query.router,  prefix="/api/v1")
     # Phase 6 developer platform. Paths (/chat, /agents, /health) do not
     # collide with the legacy query router (/ , /stream, /llm/status,
     # /conversations/{id}); api_keys lives under /workspaces alongside the

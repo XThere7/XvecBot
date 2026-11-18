@@ -185,6 +185,22 @@ async def login(payload: AuthRequest):
         )
         row = await cur.fetchone()
 
+    role = (row["role"] or "user") if row is not None else "user"
+
+    # Admin sign-in is rate limited per email per 15 minutes. The bucket is
+    # consumed BEFORE password verification so wrong passwords count too;
+    # checking it only after a successful password made brute force cheap.
+    if row is not None and role in ("admin", "superadmin"):
+        if not _check_bucket(
+            f"login:{payload.email.lower()}",
+            settings.admin_login_max_per_email_per_15m,
+            _LOGIN_WINDOW,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many sign-in attempts. Try again later.",
+            )
+
     if (
         row is None
         or not verify_password(payload.password, row["hashed_password"])
@@ -195,20 +211,6 @@ async def login(payload: AuthRequest):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
-
-    role = row["role"] or "user"
-
-    # Admin sign-in is rate limited (per email, per 15 minutes).
-    if role in ("admin", "superadmin"):
-        if not _check_bucket(
-            f"login:{payload.email.lower()}",
-            settings.admin_login_max_per_email_per_15m,
-            _LOGIN_WINDOW,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many sign-in attempts. Try again later.",
-            )
 
     # Two-factor authentication (TOTP) — admins and the superadmin only.
     if row["totp_enabled"]:

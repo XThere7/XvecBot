@@ -183,6 +183,9 @@ export default function AdminUserDetailPage() {
                         `Type the email to permanently delete:\n${user.email}`,
                       ) || "",
                       reauth_password: window.prompt("Your password to confirm:") || "",
+                      reauth_code: window.prompt(
+                        "Your 6-digit 2FA code (leave blank if 2FA is not enabled):",
+                      ) || "",
                     },
                     skipAuthRedirect: true,
                   }),
