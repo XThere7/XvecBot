@@ -60,7 +60,9 @@ def reset_admin_auth_buckets() -> None:
     _auth_buckets.clear()
 
 
-def _check_bucket(key: str, limit: int, window: float) -> bool:
+def _check_bucket(
+    key: str, limit: int, window: float, *, consume: bool = True
+) -> bool:
     import time as _time
 
     now = _time.monotonic()
@@ -68,8 +70,11 @@ def _check_bucket(key: str, limit: int, window: float) -> bool:
     if len(hits) >= max(1, limit):
         _auth_buckets[key] = hits
         return False
-    hits.append(now)
-    _auth_buckets[key] = hits
+    if consume:
+        hits.append(now)
+        _auth_buckets[key] = hits
+    else:
+        _auth_buckets[key] = hits
     return True
 
 
@@ -190,23 +195,36 @@ async def login(payload: AuthRequest):
     # Admin sign-in is rate limited per email per 15 minutes. The bucket is
     # consumed BEFORE password verification so wrong passwords count too;
     # checking it only after a successful password made brute force cheap.
-    if row is not None and role in ("admin", "superadmin"):
+    is_admin = row is not None and role in ("admin", "superadmin")
+    bucket_key = f"login:{payload.email.lower()}"
+    if is_admin:
         if not _check_bucket(
-            f"login:{payload.email.lower()}",
+            bucket_key,
             settings.admin_login_max_per_email_per_15m,
             _LOGIN_WINDOW,
+            consume=False,
         ):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many sign-in attempts. Try again later.",
             )
 
-    if (
+    invalid = (
         row is None
         or not verify_password(payload.password, row["hashed_password"])
         or not row["is_active"]
         or row["suspended_at"]
-    ):
+    )
+    if invalid:
+        # Count failures only; successful sign-ins must not consume the
+        # bucket or a busy admin could lock themselves out.
+        if is_admin:
+            _check_bucket(
+                bucket_key,
+                settings.admin_login_max_per_email_per_15m,
+                _LOGIN_WINDOW,
+                consume=True,
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
