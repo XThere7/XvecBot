@@ -185,6 +185,7 @@ services:
       - "443:443/udp"
     environment:
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN to the API hostname, e.g. api.yourdomain.com}
+      API_ALT_DOMAIN: ${API_ALT_DOMAIN:?set API_ALT_DOMAIN to a second API hostname, e.g. api-v2.yourdomain.com}
       ACME_EMAIL: ${ACME_EMAIL:-ops@yourdomain.com}
     volumes:
       - ../deploy/Caddyfile:/etc/caddy/Caddyfile:ro

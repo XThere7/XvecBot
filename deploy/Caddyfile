@@ -1,15 +1,14 @@
 # BotBase API — TLS termination (Caddy).
 #
-# The hostname comes from the API_DOMAIN environment variable that
-# docker/compose.prod.yml passes in.
+# The hostnames come from the API_DOMAIN and API_ALT_DOMAIN environment
+# variables that docker/compose.prod.yml passes in. Both serve the same API;
+# the alternate hostname lets the frontend switch immediately when a DNS
+# record is replaced and old resolvers still hold the previous TTL.
 #
 # Cloudflare note (important):
-#   Keep the DNS record for this hostname DNS-ONLY (grey cloud). Caddy then
-#   forwards the real client IP in X-Forwarded-For, which is what the API's
-#   per-IP rate limiter buckets on. If you switch the record to Cloudflare's
-#   proxy (orange cloud), the peer becomes a Cloudflare edge IP and every
-#   visitor would share one rate-limit bucket — in that case uncomment the
-#   CF-Connecting-IP line below so the real client IP is still forwarded.
+#   When the DNS record is proxied (orange cloud), the peer is a Cloudflare
+#   edge IP. Caddy forwards CF-Connecting-IP as X-Forwarded-For so the API's
+#   per-IP rate limiter still buckets by the real client, not the edge.
 #
 # The API itself is not published to the host: only this container exposes
 # 80/443, so nobody can bypass TLS or the proxy.
@@ -21,7 +20,7 @@
 	# acme_dns cloudflare {env.CF_API_TOKEN}
 }
 
-{$API_DOMAIN} {
+{$API_DOMAIN}, {$API_ALT_DOMAIN} {
 	encode zstd gzip
 
 	header {
@@ -30,7 +29,7 @@
 	}
 
 	reverse_proxy backend:8000 {
-		# header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
 	}
 
 	log {
