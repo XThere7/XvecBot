@@ -40,7 +40,10 @@ def create_access_token(data: dict, expire_days: float | None = None) -> str:
     to_encode = data.copy()
     now = datetime.now(timezone.utc)
     days = settings.ACCESS_TOKEN_EXPIRE_DAYS if expire_days is None else expire_days
-    to_encode.update({"exp": now + timedelta(days=days), "iat": now})
+    # NumericDate permits fractional seconds. Keep microseconds so a token
+    # issued immediately before a password reset can never appear newer than
+    # the reset when both happen within the same clock second.
+    to_encode.update({"exp": now + timedelta(days=days), "iat": now.timestamp()})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
