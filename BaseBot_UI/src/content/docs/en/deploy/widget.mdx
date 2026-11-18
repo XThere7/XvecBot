@@ -1,0 +1,27 @@
+---
+title: Website widget
+description: Add the BotBase chat widget to your website with an embed token.
+group: Deploy
+order: 30
+---
+
+# Website widget
+
+An embed token lets a BotBase agent appear as a chat bubble on a website.
+
+## Create a token
+
+1. Open the agent.
+2. Open the **Embed** tab.
+3. Create a token and give it a label.
+4. Copy the snippet immediately. The full token is shown once.
+
+## Add it to your site
+
+Paste the generated `<script>` tag into the page where the widget should appear. The script loads the widget from the BotBase API origin and opens the configured agent.
+
+If you restrict the token to specific origins, add every hostname that will serve the widget. Hostnames are matched exactly, so `example.com` and `www.example.com` are different entries.
+
+## Test it
+
+Open the page in a browser, open the chat bubble and send a question. If the widget says the assistant is unavailable, check the token status, the agent status and the origin allow-list in the dashboard.

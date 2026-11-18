@@ -1,0 +1,25 @@
+---
+title: Agent models
+description: How model selection works for BotBase agents and what to expect from free and paid models.
+group: Agents & Models
+order: 20
+---
+
+# Agent models
+
+Each agent can use a different model. The model controls answer quality, speed and cost.
+
+## Choosing a model
+
+- **Free models** are useful for testing and low-volume use. They may be rate-limited or temporarily unavailable.
+- **Paid models** are more reliable under load and usually produce better answers.
+
+If a model is unavailable, BotBase can fall back to the configured fallback model. OpenRouter account credit is required for paid models.
+
+## Temperature
+
+Temperature controls how creative the answer is. Lower values are more precise; higher values produce more variation. The agent editor clamps the value to the supported range.
+
+## Changing the model
+
+Open the agent, choose **Edit**, select a model and save. New conversations use the new model immediately. Existing conversation history is preserved.

@@ -1,0 +1,40 @@
+---
+title: Developer API
+description: Call a BotBase agent from your own backend with a workspace-scoped API key.
+group: Developer
+order: 40
+---
+
+# Developer API
+
+The Developer API lets your own application call a BotBase agent without a dashboard session.
+
+## Authentication
+
+Create an API key under the workspace **Developer** tab. The full key is shown once. Send it as:
+
+```http
+X-API-Key: sk-botbase-...
+```
+
+Keys are scoped to one workspace. An agent from another workspace cannot be called with that key.
+
+## List agents
+
+```bash
+curl https://api.botbasex.com/api/v1/agents \
+  -H "X-API-Key: $BOTBASE_API_KEY"
+```
+
+## Chat
+
+```bash
+curl -X POST https://api.botbasex.com/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $BOTBASE_API_KEY" \
+  -d '{"agent_id":"YOUR_AGENT_ID","message":"What can you help me with?"}'
+```
+
+Pass the returned `conversation_id` on later turns to continue the same conversation.
+
+Streaming is not supported yet; call with `stream` omitted or `false`.
