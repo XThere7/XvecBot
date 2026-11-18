@@ -136,13 +136,24 @@ async def public_chat(
         _check_rate_limit(payload.token)
         await embed_service.record_token_use(db, embed["id"])
         channel = _channel_for_origin(origin)
-        result = await embed_service.chat_for_public_agent(
-            db=db,
-            agent=agent,
-            message=payload.message,
-            conversation_id=payload.conversation_id,
-            channel=channel,
-        )
+        try:
+            result = await embed_service.chat_for_public_agent(
+                db=db,
+                agent=agent,
+                message=payload.message,
+                conversation_id=payload.conversation_id,
+                channel=channel,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            # Provider/network failures must become a neutral 500 for the
+            # anonymous widget, never an unhandled ASGI exception.
+            log.error("Public chat failed", error=type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Chat is temporarily unavailable. Please try again.",
+            ) from exc
 
     # Strip internal fields — the public surface exposes only these three.
     # See the audit note above for the full list of what is withheld.
