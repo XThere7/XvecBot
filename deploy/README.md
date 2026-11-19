@@ -79,7 +79,8 @@ curl -fsS http://localhost/health/ready     # through Caddy
 
 | Record | Points to | Cloudflare mode |
 |---|---|---|
-| `api.<domain>` | the VPS IP | **DNS-only (grey cloud)** |
+| `api.<domain>` | the VPS IP | **proxied (orange cloud)** |
+| `api-v2.<domain>` | the VPS IP | **proxied (orange cloud)** |
 | `www.<domain>` | Vercel (dashboard) | proxied or DNS-only, Vercel issues its own cert |
 | `<domain>` (apex) | Vercel | redirect to `www` (set it in Vercel) |
 | `app.<domain>` | Vercel | optional redirect to `www` |
@@ -90,12 +91,15 @@ One origin serves the whole web app: `ALLOWED_ORIGINS`,
 (`https://api.<domain>`) — different on purpose, and the preflight script
 fails if they are the same.
 
-> **Keep `api.<domain>` grey.** With Cloudflare's proxy on, Caddy would see
-> a Cloudflare edge IP instead of the visitor's, and every visitor would
-> share one rate-limit bucket. If you want Cloudflare's proxy, uncomment the
-> `CF-Connecting-IP` line in `deploy/Caddyfile`.
+Both API hostnames are deliberately behind Cloudflare. Caddy forwards
+`CF-Connecting-IP` as `X-Forwarded-For`, so the per-IP rate limiter still
+buckets by the visitor, not the Cloudflare edge. Keep that header mapping in
+`deploy/Caddyfile` if the records stay proxied. The current frontend uses
+`api-v2.<domain>`; keep `api.<domain>` for compatibility and existing
+integrations.
 
 Caddy obtains the TLS certificate automatically (Let's Encrypt, HTTP-01).
+Cloudflare should use **Full (strict)** so it validates Caddy's certificate.
 
 ## 4. The dashboard on Vercel
 
@@ -103,27 +107,58 @@ Set these as **Production** environment variables in the Vercel project and
 redeploy (they are compiled into the browser bundle):
 
 ```
-NEXT_PUBLIC_API_BASE_URL=https://api.<domain>
+NEXT_PUBLIC_API_BASE_URL=https://api-v2.<domain>
 NEXT_PUBLIC_APP_NAME=BotBase
 NEXT_PUBLIC_SITE_URL=https://www.<domain>
 ```
 
 Root directory = `BaseBot_UI`, framework = Next.js, build = `npm run build`.
+`NEXT_PUBLIC_*` values are compiled into the browser bundle, so changing one
+requires a new Vercel deployment.
 
-## 5. Releases (the manual update cycle)
+## 5. Releases
+
+### Frontend — push to GitHub
+
+`deployChat` is the production branch. Vercel is connected to the repository,
+so this is the normal release path:
 
 ```bash
+git add .
+git commit -m "feat: ..."
+git push origin deployChat
+```
+
+Vercel builds `BaseBot_UI` and aliases the successful deployment to
+`https://www.<domain>`. Use a feature branch and the generated Preview URL
+to test first; merge to `deployChat` only when it is ready.
+
+Only use the Vercel CLI if GitHub auto-deploy is unavailable. Because the
+project Root Directory is `BaseBot_UI`, a manual CLI deploy must be run from a
+staging directory that contains `BaseBot_UI/` and `.vercel/project.json`.
+
+### Backend — run the VPS release script
+
+```bash
+ssh root@<VPS_IP>
 cd /opt/botbase
-git pull                      # or push from your machine
 bash deploy/update.sh
 ```
 
-`update.sh` snapshots the current image, rebuilds, runs the migrations with
-the new code, restarts the containers, waits for `/health/ready`, and
-**rolls back automatically** if the new version is not healthy within 90
-seconds. Downtime is 30–90 seconds.
+`update.sh` pulls `deployChat`, snapshots the current backend image, rebuilds,
+runs the Alembic migrations with the new code, restarts the containers, waits
+for `/health/ready`, and **rolls back automatically** if the new version is
+not healthy within 90 seconds. Downtime is 30–90 seconds.
 
-The dashboard updates separately: push to GitHub and Vercel redeploys.
+If a change touches both frontend and backend, push first (Vercel deploys the
+UI), then run `deploy/update.sh` on the VPS.
+
+### Database changes
+
+Add an Alembic revision under `backend/alembic/versions` as part of the
+feature. `deploy/update.sh` runs `alembic upgrade head` before the new API
+serves traffic. Take a manual database dump before a destructive migration
+until R2 backups are configured.
 
 ## 6. Transactional email (Resend)
 
@@ -224,7 +259,7 @@ once before you have real customers.
 | `/health/ready` returns 503 | `compose ps` → `compose logs --tail=100 db backend`; check `DATABASE_URL` and that the `db` container is healthy |
 | 502 from the dashboard | the API container is down or not healthy: `compose logs backend` |
 | Uploads fail in the browser (CORS) | the R2 bucket CORS must allow `PUT, GET, HEAD` from the dashboard origin |
-| Everybody hits 429 | the client IP is not reaching the app: check the DNS record is grey and that uvicorn runs with `--proxy-headers` |
+| Everybody hits 429 | the client IP is not reaching the app: check Caddy forwards `CF-Connecting-IP` as `X-Forwarded-For`, and that uvicorn runs with `--proxy-headers` |
 | Chat returns 401/402 | OpenRouter key invalid or out of credit |
 | No password-reset mail arrives | `EMAIL_BACKEND` is not `smtp`, or the SMTP credentials are wrong: `compose logs backend` shows the delivery error |
 | Password-reset mail lands in spam | SPF/DKIM/DMARC records missing or wrong for the sending domain |
