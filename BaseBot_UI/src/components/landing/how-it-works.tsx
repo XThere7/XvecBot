@@ -61,10 +61,14 @@ export function HowItWorks() {
             return (
               <motion.li
                 key={item.title}
-                initial={reduceMotion ? false : { opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-80px" }}
-                transition={{ duration: 0.4, delay: index * 0.08, ease: "easeOut" }}
+                transition={{
+                  duration: reduceMotion ? 0 : 0.4,
+                  delay: reduceMotion ? 0 : index * 0.08,
+                  ease: "easeOut",
+                }}
                 className="flex flex-col rounded-md border border-subtle bg-canvas p-6"
               >
                 <span className="flex h-11 w-11 items-center justify-center rounded-md border border-accent-500/30 bg-accent-tint text-accent-300">

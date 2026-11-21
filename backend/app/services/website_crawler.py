@@ -14,6 +14,7 @@ Properties:
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import xml.etree.ElementTree as ET
 from typing import Iterable, Optional
@@ -288,18 +289,93 @@ def _looks_like_noise(tag) -> bool:
     return bool(value and _NOISE_CLASS_RE.search(value))
 
 
-def extract_text(html: str, base_url: str) -> tuple[str, str]:
-    """
-    Turn a server-rendered HTML page into (title, clean_text).
+def _meta_content(soup, *keys: str) -> str:
+    wanted = {key.lower() for key in keys}
+    for meta in soup.find_all("meta"):
+        name = (meta.get("name") or meta.get("property") or "").strip().lower()
+        if name in wanted:
+            content = " ".join((meta.get("content") or "").split())
+            if content:
+                return content
+    return ""
 
-    Navigation, headers, footers, forms, scripts, styles, cookie banners and
-    ad slots are removed before text extraction. Raises CrawlError when fewer
-    than 100 characters of useful text remain.
+
+def _jsonld_strings(soup) -> list[str]:
+    """Collect human-facing description/name values from JSON-LD blocks."""
+    values: list[str] = []
+    for script in soup.find_all("script"):
+        script_type = (script.get("type") or "").lower()
+        if "ld+json" not in script_type:
+            continue
+        raw = script.string or script.get_text() or ""
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+
+        def walk(node) -> None:
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key.lower() in ("name", "description", "headline", "text"):
+                        if isinstance(value, str):
+                            cleaned = " ".join(value.split())
+                            if 20 <= len(cleaned) <= 600:
+                                values.append(cleaned)
+                    walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(payload)
+    return list(dict.fromkeys(values))
+
+
+def extract_text_details(html: str, base_url: str) -> tuple[str, str, str]:
+    """
+    Turn HTML into ``(title, text, quality)``.
+
+    ``quality`` is:
+      * ``full``     — meaningful visible body text was extracted;
+      * ``metadata`` — the body is a JavaScript shell, but title/description/
+                       JSON-LD/noscript content provides usable text;
+      * ``empty``    — no useful text at all.
+
+    Navigation, headers, footers, forms, scripts, styles, cookie banners and ad
+    slots are removed from the body before extraction.
     """
     if not html or not html.strip():
         raise CrawlError("Page contains no HTML.")
 
     soup = BeautifulSoup(html, "lxml")
+
+    title = ""
+    if soup.title and soup.title.string:
+        title = " ".join(str(soup.title.string).split())
+    if not title:
+        heading = soup.find("h1")
+        if heading is not None:
+            title = " ".join(heading.get_text(" ", strip=True).split())
+    if not title:
+        parsed = urlsplit(base_url)
+        title = parsed.hostname or base_url
+
+    # Capture metadata before scripts/noscript are removed. This is the safe
+    # fallback for client-rendered sites that still publish SEO metadata.
+    meta_parts: list[str] = []
+    for value in (
+        _meta_content(soup, "description", "og:description", "twitter:description"),
+        _meta_content(soup, "keywords"),
+        _meta_content(soup, "author"),
+        *_jsonld_strings(soup),
+    ):
+        cleaned = " ".join((value or "").split())
+        if len(cleaned) >= 15 and cleaned not in meta_parts:
+            meta_parts.append(cleaned)
+
+    for noscript in soup.find_all("noscript"):
+        cleaned = _normalise_text(noscript.get_text(" ", strip=True))
+        if len(cleaned) >= 15 and cleaned not in meta_parts:
+            meta_parts.append(cleaned)
 
     for tag in soup(
         ["script", "style", "noscript", "template", "svg", "canvas", "iframe",
@@ -312,17 +388,6 @@ def extract_text(html: str, base_url: str) -> tuple[str, str]:
             continue
         if _looks_like_noise(tag):
             tag.decompose()
-
-    title = ""
-    if soup.title and soup.title.string:
-        title = " ".join(str(soup.title.string).split())
-    if not title:
-        heading = soup.find("h1")
-        if heading is not None:
-            title = " ".join(heading.get_text(" ", strip=True).split())
-    if not title:
-        parsed = urlsplit(base_url)
-        title = parsed.hostname or base_url
 
     # Prefer the semantic content container, but fall back to <body> when a
     # short <main> would silently drop the actual article.
@@ -341,9 +406,21 @@ def extract_text(html: str, base_url: str) -> tuple[str, str]:
         if len(text) > len(best):
             best = text
 
-    if len(best) < 100:
+    if len(best) >= 100:
+        return title, best, "full"
+
+    metadata = "\n".join(meta_parts)
+    if len(metadata) >= 100:
+        return title, metadata, "metadata"
+    return title, (best or metadata), "empty"
+
+
+def extract_text(html: str, base_url: str) -> tuple[str, str]:
+    """Backward-compatible wrapper that raises when no usable text remains."""
+    title, text, quality = extract_text_details(html, base_url)
+    if quality == "empty" or len(text) < 100:
         raise CrawlError("Page contains too little text.")
-    return title, best
+    return title, text
 
 
 async def _extract_links(html: str, base_url: str) -> list[str]:
@@ -594,16 +671,44 @@ async def fetch_page(
     url: str,
     *,
     session: httpx.AsyncClient,
-) -> tuple[str, str, str]:
+    renderer=None,
+) -> tuple[str, str, str, str]:
     """
     Fetch and clean one HTML page.
 
-    Returns (final_url, page_title, clean_text). Raises CrawlError on failure,
-    oversized/non-HTML responses, or pages with less than 100 useful chars.
+    Returns ``(final_url, page_title, clean_text, quality)``. ``quality`` is
+    ``full`` for normal HTML, ``metadata`` for a JavaScript shell where only
+    SEO metadata/noscript content was available, and ``empty`` when nothing
+    useful could be extracted. When a renderer is supplied, metadata/empty
+    pages are re-fetched through headless Chromium before giving up.
     """
     final_url, content_type, body = await _get_bytes(
         url, session=session, allowed_content_types=_HTML_CONTENT_TYPES
     )
     html = _decode_body(body, content_type)
-    title, clean_text = extract_text(html, final_url)
-    return final_url, title, clean_text
+    title, text, quality = extract_text_details(html, final_url)
+
+    if quality != "full" and renderer is not None:
+        try:
+            rendered_url, rendered_html = await renderer.render(final_url)
+            rendered_title, rendered_text, rendered_quality = extract_text_details(
+                rendered_html, rendered_url
+            )
+            if rendered_quality == "full" or len(rendered_text) > len(text):
+                final_url = rendered_url
+                title = rendered_title
+                text = rendered_text
+                quality = rendered_quality
+        except Exception as exc:
+            log.debug(
+                "JavaScript render unavailable; using static extraction",
+                url=final_url,
+                error=type(exc).__name__,
+            )
+
+    if quality == "empty" or len(text) < 100:
+        raise CrawlError(
+            "Page contains no readable text. This site may render its content "
+            "with JavaScript or block automated access."
+        )
+    return final_url, title, text, quality

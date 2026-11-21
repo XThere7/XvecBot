@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LandingHeader } from "@/components/landing/landing-header";
-import { Hero } from "@/components/landing/hero";
+import { LandingStory } from "@/components/landing/landing-story";
 import { LogoMarquee } from "@/components/landing/logo-marquee";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { LandingFooter } from "@/components/landing/landing-footer";
@@ -22,7 +22,7 @@ export default function LandingPage() {
     <div className="min-h-dvh bg-canvas text-primary">
       <LandingHeader />
       <main>
-        <Hero />
+        <LandingStory />
         <LogoMarquee />
         <HowItWorks />
       </main>

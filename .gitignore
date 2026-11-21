@@ -67,18 +67,18 @@ go-live-hosting-plan.md
 # All local documentation and notes stay on this machine, never in the repo.
 *.md
 *.txt
-# ...except the files the build and the e2e fixtures need, plus the two
-# operational documents the VPS itself needs (the runbook and the restore
-# procedure). Drop these two lines if you want them local-only as well.
+docs/
+# ...except the files the build and the e2e fixtures need. These are already
+# tracked; the exceptions keep their status explicit.
 !requirements.txt
 !BaseBot_UI/e2e/catalogue.txt
 # Transactional-email plain-text parts are required at runtime.
 !backend/app/emails/*.txt
-!deploy/README.md
-!deploy/restore.md
-# ── Marketing video library (local only — never committed or deployed) ──────
+# ── Marketing video library and local tooling (never committed) ─────────────
 marketing-videos/
 botbase-hero-video/
+BotBase_Video_Studio/
+.opencode/
 
 # ── Local AI-agent tooling (never part of the product) ───────────────────────
 agent/

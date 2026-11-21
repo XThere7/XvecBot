@@ -580,6 +580,43 @@ async def assert_can_import_social_media(
     return used, plan.max_social_media_sources
 
 
+def feature_enabled(plan: Plan, feature: str) -> bool:
+    """True when a plan grants a feature.
+
+    ``feature`` may be ``"always"`` for capabilities every tier gets. Unknown
+    feature keys are treated as unavailable so a typo can never widen access.
+    """
+    if feature == "always":
+        return True
+    return bool(plan.features.get(feature, False))
+
+
+async def require_feature(
+    db: aiosqlite.Connection,
+    workspace: dict,
+    feature: str,
+    *,
+    message: str | None = None,
+) -> Plan:
+    """Raise a structured 403 when the workspace's effective plan lacks a feature."""
+    plan, _, effective_id = await resolve_plan(db, workspace)
+    if feature_enabled(plan, feature):
+        return plan
+    raise limit_error(
+        resource=feature,
+        plan=plan,
+        plan_id=effective_id,
+        used=0,
+        limit=0,
+        code="plan_feature_locked",
+        message=message
+        or (
+            f"{feature.replace('_', ' ').capitalize()} is included in Standard "
+            "and Pro. Upgrade to unlock it."
+        ),
+    )
+
+
 async def require_developer_api(
     db: aiosqlite.Connection, workspace: dict
 ) -> None:

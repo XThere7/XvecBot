@@ -6,6 +6,9 @@ export type WorkspaceTab =
   | "settings";
 export type AgentTab =
   | "overview"
+  | "actions"
+  | "capture"
+  | "email"
   | "test"
   | "media"
   | "conversations"
@@ -62,6 +65,9 @@ export function normaliseRedirectTarget(
 export function isAgentTab(value: string | undefined): value is AgentTab {
   return (
     value === "overview" ||
+    value === "actions" ||
+    value === "capture" ||
+    value === "email" ||
     value === "test" ||
     value === "media" ||
     value === "conversations" ||

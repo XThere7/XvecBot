@@ -1,4 +1,7 @@
 import { AgentOverview } from "@/components/agents/agent-overview";
+import { AgentActionsPanel } from "@/components/agents/agent-actions-panel";
+import { AgentCapturePanel } from "@/components/agents/agent-capture-panel";
+import { AgentEmailPanel } from "@/components/agents/agent-email-panel";
 import { AgentMediaPanel } from "@/components/agents/agent-media-panel";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { ConversationsPanel } from "@/components/agents/conversations-panel";
@@ -27,6 +30,12 @@ export default async function AgentPage({
         <div className="max-w-4xl">
           <AgentMediaPanel wsId={wsId} agentId={agentId} />
         </div>
+      ) : tab === "actions" ? (
+        <AgentActionsPanel wsId={wsId} agentId={agentId} />
+      ) : tab === "capture" ? (
+        <AgentCapturePanel wsId={wsId} agentId={agentId} />
+      ) : tab === "email" ? (
+        <AgentEmailPanel wsId={wsId} agentId={agentId} />
       ) : tab === "test" ? (
         <div className="max-w-3xl">
           <ChatPanel wsId={wsId} agentId={agentId} />

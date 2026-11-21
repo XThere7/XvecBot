@@ -12,6 +12,7 @@ export const SOURCE_STATUS: Record<
   pending: { label: "Queued", tone: "neutral" },
   syncing: { label: "Scanning", tone: "info", animated: true },
   synced: { label: "Ready", tone: "success" },
+  partial: { label: "Limited", tone: "warning" },
   failed: { label: "Needs attention", tone: "danger" },
 };
 
@@ -22,6 +23,7 @@ export const PAGE_STATUS: Record<
   discovered: { label: "Queued", tone: "info", animated: true },
   indexed: { label: "Indexed", tone: "success" },
   failed: { label: "Failed", tone: "danger" },
+  duplicate: { label: "Duplicate", tone: "neutral" },
   removed: { label: "Removed", tone: "neutral" },
 };
 

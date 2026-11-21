@@ -23,6 +23,7 @@ from ..retrieval.hybrid_search import hybrid_search
 from ..retrieval.reranker import rerank
 from ..storage import sqlite as db_ops
 from . import conversation_service, plan_service
+from . import action_service
 from .workspace_query_service import (
     KNOWLEDGE_SAFETY,
     _build_sources,
@@ -213,7 +214,9 @@ async def _chat_with_agent_inner(
                 detail="Conversation not found",
             )
 
-    # 3. Store the user message
+    # 3. Store the user message. Control markup is not valid visitor input and
+    #    is removed before it can be echoed by the model and executed.
+    message = action_service.strip_directive_markup(message)
     await conversation_service.add_message(
         db, conversation_id, role="user", content=message
     )
@@ -232,9 +235,18 @@ async def _chat_with_agent_inner(
     # 6. Assemble the system prompt
     system_prompt = _assemble_system_prompt(agent, context)
 
+    # 6b. Agent Actions. Active actions are described to the model, which can
+    # request a form or submit structured data through a directive. Directives
+    # are stripped from the answer and executed by the backend — the model never
+    # writes to the database directly.
+    action_rows = await action_service.list_actions(db, workspace_id, agent_id)
+    action_prompt = action_service.build_action_prompt(action_rows)
+    if action_prompt:
+        system_prompt = f"{system_prompt}\n\n{action_prompt}"
+
     # 7. Call the LLM with the agent's own model and temperature
     llm = build_generator()
-    answer = await llm.generate(
+    raw_answer = await llm.generate(
         query=message,
         context=context,
         system_prompt=system_prompt,
@@ -243,6 +255,56 @@ async def _chat_with_agent_inner(
         temperature=agent["temperature"],
     )
     model_used = llm.last_model_used
+
+    answer, directives = action_service.parse_directives(raw_answer)
+    action_results, action_form = await action_service.execute_directives(
+        db, workspace, agent_id, directives, conversation_id
+    )
+
+    # Deterministic support fallback: a visitor asking for a human should not
+    # depend on the model remembering the directive protocol.
+    support_action = next(
+        (a for a in action_rows if a["action_type"] == "knowledge_support" and a.get("is_active")),
+        None,
+    )
+    if support_action is not None and not any(
+        result.get("action_type") == "knowledge_support" for result in action_results
+    ):
+        lowered = message.lower()
+        triggers = (
+            "speak to a human",
+            "talk to a human",
+            "real person",
+            "human agent",
+            "customer support",
+            "speak to someone",
+            "talk to someone",
+            "call me",
+        )
+        if any(trigger in lowered for trigger in triggers):
+            from . import support_service
+
+            escalation = await support_service.create_escalation(
+                db,
+                workspace=workspace,
+                agent_id=agent_id,
+                conversation_id=conversation_id,
+                reason=f"Visitor requested human support: {message[:500]}",
+            )
+            action_results.append(
+                {
+                    "type": "support_escalated",
+                    "action_type": "knowledge_support",
+                    "label": "Support escalation created",
+                    "id": escalation["id"],
+                }
+            )
+
+    if not answer:
+        if action_form is not None or action_results:
+            answer = "I've prepared the next step for you below."
+        else:
+            answer = "I'm sorry — I could not produce an answer to that. Please try rephrasing your question."
 
     # 8. Store the assistant response
     await conversation_service.add_message(
@@ -285,4 +347,6 @@ async def _chat_with_agent_inner(
         "answer": answer,
         "sources": sources,
         "model_used": model_used,
+        "actions": action_results,
+        "action_form": action_form,
     }

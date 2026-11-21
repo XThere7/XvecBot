@@ -21,6 +21,12 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Headless Chromium for JavaScript-rendered websites. It is only launched when
+# WEBSITE_JS_RENDER_ENABLED=true; static crawls never start a browser.
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+RUN DEBIAN_FRONTEND=noninteractive playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY backend/ ./backend/
 # Operational scripts (backup/restore/preflight) run inside the container.
 COPY scripts/ ./scripts/
@@ -42,7 +48,7 @@ ENV HF_HOME=/app/.hf-cache \
 # compose additionally maps `user: ${UID}:${GID}` so bind-mounted host
 # files keep owner identity instead of becoming root-owned (which once
 # zeroed a developer's data/rag.db).
-RUN mkdir -p data/uploads data/processed data/embeddings .hf-cache \
+RUN mkdir -p data/uploads data/processed data/embeddings .hf-cache .playwright \
  && chmod 755 data data/uploads data/processed data/embeddings
 
 # Warm BOTH models. The reranker is loaded lazily on the first query in the
@@ -61,7 +67,7 @@ RUN if [ "$WARM_MODELS" = "1" ]; then \
 # (world-readable — imports work); only /app runtime dirs need ownership.
 # Dev compose overrides with `user: ${UID}:${GID}` for bind-mount identity.
 RUN useradd -m -u 1000 appuser \
- && chown -R appuser:appuser /app/data /app/.hf-cache
+ && chown -R appuser:appuser /app/data /app/.hf-cache /app/.playwright
 USER appuser
 
 EXPOSE 8000

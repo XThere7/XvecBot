@@ -73,6 +73,12 @@ services:
       UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
       RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      # JavaScript-rendered sites (SPAs) require the Chromium bundled in the
+      # image. Static pages never launch it. Set NO_SANDBOX=true only if the
+      # container cannot create Chromium's user namespace.
+      WEBSITE_JS_RENDER_ENABLED: ${WEBSITE_JS_RENDER_ENABLED:-true}
+      WEBSITE_BROWSER_NO_SANDBOX: ${WEBSITE_BROWSER_NO_SANDBOX:-false}
+      WEBSITE_RENDER_MAX_PAGES: ${WEBSITE_RENDER_MAX_PAGES:-10}
       # Legacy global API is not tenant-scoped. Production disables it.
       ENABLE_LEGACY_API: ${ENABLE_LEGACY_API:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

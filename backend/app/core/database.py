@@ -19,6 +19,8 @@ import sqlite_vec
 
 from .config import settings
 from .logging import get_logger
+from ..models.email_agent import EMAIL_AGENT_TABLES_SQL
+from ..models.engagement import ENGAGEMENT_TABLES_SQL
 
 log = get_logger(__name__)
 
@@ -626,6 +628,14 @@ async def _init_db_postgres() -> None:
         for stmt in (s.strip() for s in PG_TABLES.split(";")):
             if stmt:
                 await conn.execute(stmt)
+        # Engagement + Email Agent tables (shared DDL with SQLite).
+        from ..models.email_agent import EMAIL_AGENT_TABLES_SQL
+        from ..models.engagement import ENGAGEMENT_TABLES_SQL
+
+        for block in (ENGAGEMENT_TABLES_SQL, EMAIL_AGENT_TABLES_SQL):
+            for stmt in (s.strip() for s in block.split(";")):
+                if stmt:
+                    await conn.execute(stmt)
         # Additive columns for pre-existing tables (idempotent).
         from .pg_schema import PG_ADDITIVE_COLUMNS
 
@@ -703,6 +713,10 @@ async def init_db() -> None:
         await db.executescript(CREATE_WEBSITE_PAGES)
         await db.executescript(CREATE_WEBSITE_SYNC_JOBS)
         await db.executescript(CREATE_SOCIAL_MEDIA_SOURCES)
+        # Agent Actions, leads, collections, forms, support escalations.
+        await db.executescript(ENGAGEMENT_TABLES_SQL)
+        # Email Agent integrations, incoming mail, drafts, approvals, SMS.
+        await db.executescript(EMAIL_AGENT_TABLES_SQL)
         # Agent-scoped knowledge marker for pre-existing chunks tables.
         await _add_columns_if_missing(db, "chunks", CHUNK_SCOPE_COLUMNS)
         # Agent columns on the pre-existing Phase 1 conversations table (idempotent).

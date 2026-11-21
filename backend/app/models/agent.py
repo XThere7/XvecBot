@@ -64,6 +64,9 @@ class AgentCreate(BaseModel):
     # Optional at create time; a NULL value makes the public API fall back to
     # the default greeting.
     welcome_message: Optional[str] = Field(default=None, max_length=500)
+    # Which Agent Actions to create for the new agent. Omitted = every action
+    # allowed by the workspace's plan. Unknown/locked types are ignored.
+    action_types: Optional[list[str]] = Field(default=None, max_length=10)
 
 
 class AgentUpdate(BaseModel):

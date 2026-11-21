@@ -25,7 +25,7 @@ from ..ingestion.embedder import embed_texts
 from ..ingestion.indexer import index_chunks
 from ..ingestion.pdf_loader import PageContent
 from ..storage import vector_store
-from . import plan_service, website_crawler
+from . import plan_service, website_crawler, website_renderer
 
 log = get_logger(__name__)
 
@@ -52,6 +52,49 @@ def _next_sync_at(policy: str, now: datetime) -> Optional[str]:
     if policy == "weekly":
         return (now + timedelta(days=7)).isoformat()
     return None
+
+
+def sync_outcome(counts: dict, metadata_pages: int) -> dict:
+    """Turn raw crawl counts into a truthful source/job status.
+
+    Zero indexed pages is always a failure — a report that claims success
+    without usable chunks would be false. A mix of successes and failures, or
+    metadata-only extraction from a JavaScript shell, is partial success.
+    """
+    indexed = counts.get("pages_indexed", 0)
+    unchanged = counts.get("pages_unchanged", 0)
+    succeeded = indexed + unchanged
+    failed = counts.get("pages_failed", 0)
+
+    if succeeded == 0:
+        message = (
+            f"{failed} page(s) could not be indexed."
+            if failed
+            else "No pages could be indexed."
+        )
+        return {
+            "status": "failed",
+            "job_status": "failed",
+            "error_message": message,
+            "last_synced_at": False,
+        }
+
+    messages: list[str] = []
+    if metadata_pages:
+        messages.append(
+            "Only page metadata could be indexed because this site loads its "
+            "main content with JavaScript. Enable JavaScript rendering for full "
+            "page content, or publish server-rendered pages."
+        )
+    if failed:
+        messages.append(f"{failed} page(s) could not be processed.")
+    status = "partial" if (failed or metadata_pages) else "synced"
+    return {
+        "status": status,
+        "job_status": "completed",
+        "error_message": " ".join(messages) or None,
+        "last_synced_at": True,
+    }
 
 
 async def _page_exists(
@@ -483,6 +526,8 @@ async def sync_website_source(
         "pages_unchanged": 0,
         "pages_failed": 0,
     }
+    metadata_pages = 0
+    seen_hashes: dict[str, str] = {}
     job_id: Optional[str] = None
     try:
         job_id = await _create_job(
@@ -522,6 +567,7 @@ async def sync_website_source(
         return counts
 
     async with client as session:
+        renderer = await website_renderer.create_renderer(source["url"])
         try:
             discovered = await website_crawler.discover_pages(
                 source["url"],
@@ -564,11 +610,33 @@ async def sync_website_source(
                     await db.commit()
 
                 try:
-                    final_url, title, text = await website_crawler.fetch_page(
-                        page_url, session=session
+                    final_url, title, text, quality = await website_crawler.fetch_page(
+                        page_url, session=session, renderer=renderer
                     )
                     counts["pages_crawled"] += 1
+                    if quality == "metadata":
+                        metadata_pages += 1
                     content_hash = _content_hash(text)
+
+                    if content_hash in seen_hashes:
+                        await remove_page_chunks(db, page_id, workspace_id)
+                        await db.execute(
+                            """UPDATE website_pages
+                               SET title = ?, status = 'duplicate', chunk_count = 0,
+                                   content_hash = ?, error_message = ?,
+                                   last_indexed_at = NULL
+                               WHERE id = ?""",
+                            (
+                                title or page_url,
+                                content_hash,
+                                f"Same content as {seen_hashes[content_hash]}; "
+                                "not indexed separately.",
+                                page_id,
+                            ),
+                        )
+                        await db.commit()
+                        counts["pages_unchanged"] += 1
+                        continue
 
                     unchanged = (
                         page is not None
@@ -577,6 +645,7 @@ async def sync_website_source(
                         and await _existing_index_rows(db, page_id, workspace_id)
                     )
                     if unchanged:
+                        seen_hashes[content_hash] = page_url
                         await db.execute(
                             """UPDATE website_pages
                                SET title = ?, error_message = NULL
@@ -626,6 +695,7 @@ async def sync_website_source(
                     )
                     if chunk_count > 0:
                         counts["pages_indexed"] += 1
+                        seen_hashes[content_hash] = page_url
                 except Exception as exc:
                     counts["pages_failed"] += 1
                     log.warning(
@@ -680,14 +750,9 @@ async def sync_website_source(
                 indexed_row = await cur.fetchone()
             indexed_count = int(indexed_row["n"] if indexed_row is not None else 0)
 
-            failed = counts["pages_failed"]
-            succeeded = counts["pages_indexed"] + counts["pages_unchanged"]
-            source_status = "failed" if failed and not succeeded else "synced"
-            error_message = (
-                f"{failed} page(s) could not be indexed."
-                if source_status == "failed"
-                else None
-            )
+            outcome = sync_outcome(counts, metadata_pages)
+            source_status = outcome["status"]
+            error_message = outcome["error_message"]
 
             await db.execute(
                 """UPDATE website_sources
@@ -701,10 +766,11 @@ async def sync_website_source(
                     indexed_count,
                     # A failed sync is not a successful refresh; keep the old
                     # timestamp so the manual-refresh cooldown does not punish
-                    # the user for a failure that made no progress.
+                    # the user for a failure that made no progress. Partial
+                    # success is still progress, so it updates the timestamp.
                     (
                         now.isoformat()
-                        if source_status == "synced"
+                        if outcome["last_synced_at"]
                         else source.get("last_synced_at")
                     ),
                     _next_sync_at(source.get("refresh_policy") or "manual", now),
@@ -717,7 +783,7 @@ async def sync_website_source(
             await _finish_job(
                 db,
                 job_id=job_id,
-                status="completed" if source_status == "synced" else "failed",
+                status=outcome["job_status"],
                 counts=counts,
                 error=error_message,
             )
@@ -749,3 +815,6 @@ async def sync_website_source(
                     error=str(cleanup_exc),
                 )
             return counts
+        finally:
+            if renderer is not None:
+                await renderer.close()

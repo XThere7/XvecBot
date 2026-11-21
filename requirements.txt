@@ -22,6 +22,11 @@ python-docx==1.1.2
 beautifulsoup4==4.12.3
 lxml==5.3.0
 
+# Optional headless rendering for JavaScript-rendered websites. The Python
+# package is inert unless WEBSITE_JS_RENDER_ENABLED=true and a Chromium binary
+# is available. docker/Dockerfile.backend installs the browser.
+playwright==1.49.1
+
 # ── Search ───────────────────────────────────────────────────────────────────
 rank-bm25==0.2.2
 sqlite-vec==0.1.6

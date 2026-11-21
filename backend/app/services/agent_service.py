@@ -79,6 +79,7 @@ async def create_agent(
     temperature: float,
     language: str,
     welcome_message: str | None = None,
+    action_types: list[str] | None = None,
 ) -> dict:
     """
     Create an agent inside a workspace.
@@ -132,6 +133,23 @@ async def create_agent(
     await db.commit()
 
     agent = await _get_agent_row(db, agent_id)
+
+    # Agent Actions are created from the same catalogue as existing agents, so
+    # a new agent is immediately useful in chat. A locked action is skipped
+    # rather than failing agent creation.
+    try:
+        from . import action_service
+
+        await action_service.seed_default_actions(
+            db, workspace, agent_id, action_types
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        log.warning(
+            "Default actions could not be created",
+            agent_id=agent_id,
+            error=type(exc).__name__,
+        )
+
     log.info(
         "Agent created",
         agent_id=agent_id,

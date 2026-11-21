@@ -53,10 +53,22 @@ EXPECTED_TABLES = {
     "website_sources",
     "website_pages",
     "website_sync_jobs",
+    "agent_actions",
+    "leads",
+    "data_collections",
+    "data_submissions",
+    "custom_forms",
+    "form_submissions",
+    "support_escalations",
+    "email_integrations",
+    "incoming_emails",
+    "email_drafts",
+    "email_approvals",
+    "notification_messages",
 }
 
 # The schema revision the production database must be on.
-EXPECTED_ALEMBIC_HEAD = "0012_admin_panel"
+EXPECTED_ALEMBIC_HEAD = "0013_actions_and_email_agent"
 
 results: list[tuple[str, str, str]] = []
 

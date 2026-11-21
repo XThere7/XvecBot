@@ -125,7 +125,7 @@ _FREE_FEATURES: dict[str, Any] = {
     "website_widget": True,
     "citations": True,
     "conversation_history": True,
-    "lead_forms": True,
+    "lead_forms": False,
     "email_integration": False,
     "lead_qualification": False,
     "actions": False,
@@ -174,7 +174,7 @@ PLAN_CATALOG: dict[str, Plan] = {
         recommended=False,
         limits=_limits("free"),
         features=dict(_FREE_FEATURES),
-        coming_soon=("lead_forms",),
+        coming_soon=(),
     ),
     "standard": Plan(
         id="standard",
@@ -185,13 +185,7 @@ PLAN_CATALOG: dict[str, Plan] = {
         recommended=True,
         limits=_limits("standard"),
         features=dict(_STANDARD_FEATURES),
-        coming_soon=(
-            "lead_forms",
-            "email_integration",
-            "lead_qualification",
-            "actions",
-            "members",
-        ),
+        coming_soon=("members",),
     ),
     "pro": Plan(
         id="pro",
@@ -203,10 +197,6 @@ PLAN_CATALOG: dict[str, Plan] = {
         limits=_limits("pro"),
         features=dict(_PRO_FEATURES),
         coming_soon=(
-            "lead_forms",
-            "email_integration",
-            "lead_qualification",
-            "actions",
             "members",
             "whatsapp",
             "automations",

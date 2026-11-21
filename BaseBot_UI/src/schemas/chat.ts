@@ -27,11 +27,61 @@ export const sourceSchema = z.object({
 
 export const sourcesSchema = z.array(sourceSchema);
 
+export const actionFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  type: z.enum([
+    "short_text",
+    "long_text",
+    "email",
+    "phone",
+    "number",
+    "select",
+    "boolean",
+    "date",
+  ]),
+  required: z.boolean(),
+  max_length: z.number().optional(),
+  options: z.array(z.string()).optional(),
+  placeholder: z.string().optional(),
+  help_text: z.string().optional(),
+});
+
+export const actionFormSchema = z.object({
+  kind: z.literal("action_form"),
+  action_id: z.string(),
+  action_type: z.enum([
+    "lead_capture",
+    "data_collection",
+    "custom_forms",
+    "knowledge_support",
+  ]),
+  title: z.string(),
+  description: z.string(),
+  fields: z.array(actionFieldSchema),
+  require_consent: z.boolean(),
+  consent_text: z.string().nullable().optional(),
+  submit_label: z.string(),
+});
+
 export const agentChatResponseSchema = z.object({
   conversation_id: z.string(),
   answer: z.string(),
   sources: sourcesSchema,
   model_used: z.string(),
+  actions: z
+    .array(
+      z.object({
+        type: z.string(),
+        action_type: z.string().optional(),
+        label: z.string().optional(),
+        id: z.string().optional(),
+        errors: z.array(z.string()).optional(),
+        status: z.string().optional(),
+      }),
+    )
+    .optional(),
+  action_form: actionFormSchema.nullable().optional(),
 });
 
 export const publicAgentInfoSchema = z.object({
@@ -46,6 +96,10 @@ export const publicChatResponseSchema = z.object({
   answer: z.string(),
   sources: sourcesSchema,
   conversation_id: z.string(),
+  actions: z
+    .array(z.object({ type: z.string().nullable(), label: z.string().nullable() }))
+    .optional(),
+  action_form: actionFormSchema.nullable().optional(),
 });
 
 export const workspaceChatResponseSchema = z.object({

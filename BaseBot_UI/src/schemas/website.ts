@@ -4,6 +4,7 @@ export const websiteSourceStatusSchema = z.enum([
   "pending",
   "syncing",
   "synced",
+  "partial",
   "failed",
 ]);
 
@@ -11,6 +12,7 @@ export const websitePageStatusSchema = z.enum([
   "discovered",
   "indexed",
   "failed",
+  "duplicate",
   "removed",
 ]);
 

@@ -257,6 +257,160 @@
 }
 
 /* ============================================================================
+   Landing — scroll story
+   Cinematic chapter backdrops and the ambient float used by the product
+   mockups. All motion remains GPU-friendly (transform/opacity only) and is
+   driven by the scroll progress in landing-story.tsx.
+   ========================================================================== */
+
+@keyframes story-float {
+  from {
+    transform: translate3d(0, 5px, 0) rotate(-0.15deg);
+  }
+  to {
+    transform: translate3d(0, -8px, 0) rotate(0.2deg);
+  }
+}
+
+.story-float {
+  animation: story-float 11s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* The cinematic branch and the readable fallback are both rendered so the
+   server output is deterministic. CSS chooses exactly one, which also keeps
+   prefers-reduced-motion users out of the pinned sequence entirely. */
+.reduce-story {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce), (max-height: 640px) and (max-width: 1023px) {
+  .motion-story {
+    display: none !important;
+  }
+
+  .reduce-story {
+    display: block !important;
+  }
+}
+
+.story-grid {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.1) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 72% 64% at 64% 46%,
+    black,
+    transparent 76%
+  );
+  mask-image: radial-gradient(
+    ellipse 72% 64% at 64% 46%,
+    black,
+    transparent 76%
+  );
+}
+
+.story-accent {
+  color: var(--color-accent-300);
+}
+
+.story-scene {
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-canvas);
+}
+
+.story-scene--indigo {
+  background-image:
+    radial-gradient(ellipse 64% 58% at 76% 34%, rgba(79, 70, 229, 0.26), transparent 68%),
+    radial-gradient(ellipse 42% 48% at 8% 92%, rgba(37, 99, 235, 0.12), transparent 72%);
+}
+
+.story-scene--ember {
+  background-image:
+    radial-gradient(ellipse 60% 54% at 20% 24%, rgba(245, 158, 11, 0.11), transparent 68%),
+    radial-gradient(ellipse 56% 62% at 82% 68%, rgba(239, 68, 68, 0.09), transparent 72%);
+}
+
+.story-scene--resolve {
+  background-image:
+    radial-gradient(ellipse 58% 56% at 74% 36%, rgba(16, 185, 129, 0.1), transparent 68%),
+    radial-gradient(ellipse 48% 54% at 18% 76%, rgba(99, 102, 241, 0.15), transparent 72%);
+}
+
+.story-scene--connect {
+  background-image:
+    radial-gradient(ellipse 60% 58% at 72% 36%, rgba(14, 165, 233, 0.13), transparent 68%),
+    radial-gradient(ellipse 50% 52% at 16% 82%, rgba(99, 102, 241, 0.18), transparent 72%);
+}
+
+.story-scene--calm {
+  background-image:
+    radial-gradient(ellipse 62% 60% at 78% 44%, rgba(139, 92, 246, 0.14), transparent 70%),
+    radial-gradient(ellipse 44% 46% at 22% 84%, rgba(99, 102, 241, 0.07), transparent 74%);
+}
+
+.story-scene--final {
+  background-image:
+    radial-gradient(ellipse 64% 62% at 74% 38%, rgba(99, 102, 241, 0.3), transparent 68%),
+    radial-gradient(ellipse 50% 50% at 14% 86%, rgba(37, 99, 235, 0.14), transparent 72%);
+}
+
+:root[data-theme="light"] .story-grid {
+  background-image:
+    linear-gradient(to right, rgba(71, 85, 105, 0.11) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(71, 85, 105, 0.11) 1px, transparent 1px);
+}
+
+:root[data-theme="light"] .story-scene--indigo {
+  background-image:
+    radial-gradient(ellipse 64% 58% at 76% 34%, rgba(99, 102, 241, 0.16), transparent 68%),
+    radial-gradient(ellipse 42% 48% at 8% 92%, rgba(37, 99, 235, 0.08), transparent 72%);
+}
+
+:root[data-theme="light"] .story-scene--ember {
+  background-image:
+    radial-gradient(ellipse 60% 54% at 20% 24%, rgba(217, 119, 6, 0.1), transparent 68%),
+    radial-gradient(ellipse 56% 62% at 82% 68%, rgba(220, 38, 38, 0.06), transparent 72%);
+}
+
+:root[data-theme="light"] .story-scene--resolve {
+  background-image:
+    radial-gradient(ellipse 58% 56% at 74% 36%, rgba(5, 150, 105, 0.08), transparent 68%),
+    radial-gradient(ellipse 48% 54% at 18% 76%, rgba(79, 70, 229, 0.1), transparent 72%);
+}
+
+:root[data-theme="light"] .story-scene--connect {
+  background-image:
+    radial-gradient(ellipse 60% 58% at 72% 36%, rgba(2, 132, 199, 0.09), transparent 68%),
+    radial-gradient(ellipse 50% 52% at 16% 82%, rgba(79, 70, 229, 0.12), transparent 72%);
+}
+
+:root[data-theme="light"] .story-scene--calm {
+  background-image:
+    radial-gradient(ellipse 62% 60% at 78% 44%, rgba(124, 58, 237, 0.08), transparent 70%),
+    radial-gradient(ellipse 44% 46% at 22% 84%, rgba(99, 102, 241, 0.05), transparent 74%);
+}
+
+:root[data-theme="light"] .story-scene--final {
+  background-image:
+    radial-gradient(ellipse 64% 62% at 74% 38%, rgba(79, 70, 229, 0.17), transparent 68%),
+    radial-gradient(ellipse 50% 50% at 14% 86%, rgba(37, 99, 235, 0.09), transparent 72%);
+}
+
+:root[data-theme="light"] .story-accent {
+  color: var(--color-accent-600);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-float {
+    animation: none !important;
+    will-change: auto;
+  }
+}
+
+/* ============================================================================
    Reduced motion — every animation degrades to a static state.
    ========================================================================== */
 

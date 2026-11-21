@@ -6,6 +6,7 @@ import Link from "next/link";
 import { MessageSquarePlus } from "lucide-react";
 import { ChatInput } from "./chat-input";
 import { ChatMessageBubble, type ChatMessage } from "./chat-message-bubble";
+import { ActionFieldForm } from "@/components/actions/action-field-form";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { ErrorPanel } from "@/components/common/error-panel";
@@ -15,8 +16,10 @@ import { parseApiDate } from "@/lib/format";
 import { workspaceHref } from "@/lib/routes";
 import { chatErrorMessage, useAgentChat, useCreateConversation } from "@/hooks/use-conversations";
 import { useAgent } from "@/hooks/use-agents";
+import { useSubmitAction } from "@/hooks/use-engagement";
 import { planLimitFromError, useBilling } from "@/hooks/use-billing";
-import type { PlanLimitDetail } from "@/types/api";
+import { toast } from "@/lib/toast";
+import type { ActionFormPayload, PlanLimitDetail } from "@/types/api";
 
 /** PREMIUM MOMENT 5 — lazily loaded panel entrance. */
 const BlurFade = dynamic(
@@ -35,11 +38,13 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
   const billing = useBilling(wsId);
   const sendMessage = useAgentChat(wsId, agentId);
   const newConversation = useCreateConversation(wsId, agentId);
+  const submitAction = useSubmitAction(wsId, agentId);
 
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [draft, setDraft] = React.useState("");
   const [conversationId, setConversationId] = React.useState<string | null>(null);
   const [planLimit, setPlanLimit] = React.useState<PlanLimitDetail | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const [failedMessage, setFailedMessage] = React.useState<{
     text: string;
     message: string;
@@ -101,6 +106,7 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
     setMessages((current) => [...current, userMessage]);
     setDraft("");
     setFailedMessage(null);
+    setActionError(null);
 
     try {
       const response = await sendMessage.mutateAsync({
@@ -119,6 +125,8 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
           sources: response.sources,
           modelUsed: response.model_used,
           createdAt: new Date().toISOString(),
+          actionForm: response.action_form ?? null,
+          actions: response.actions ?? [],
         },
       ]);
     } catch (error) {
@@ -160,6 +168,45 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
       current.filter((message) => message.id !== failedMessage.messageId),
     );
     void send(failedMessage.text);
+  };
+
+  const submitInteractiveForm = async (
+    messageId: string,
+    form: ActionFormPayload,
+    values: Record<string, unknown>,
+  ) => {
+    setActionError(null);
+    try {
+      const result = await submitAction.mutateAsync({
+        actionId: form.action_id,
+        data: values,
+        conversationId,
+      });
+      setMessages((current) => [
+        ...current.map((message) =>
+          message.id === messageId ? { ...message, actionForm: null } : message,
+        ),
+        {
+          id: `action-${Date.now()}`,
+          role: "assistant",
+          content: `${result.label}. The record was saved to this workspace.`,
+          sources: [],
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      toast.success({ title: result.label });
+    } catch (error) {
+      const detail = (error as { body?: { detail?: unknown } })?.body?.detail as
+        | { errors?: string[]; message?: string }
+        | string
+        | undefined;
+      const message =
+        typeof detail === "string"
+          ? detail
+          : detail?.errors?.join(" ") || "The form could not be submitted.";
+      setActionError(message);
+      toast.error({ title: "Form could not be submitted" });
+    }
   };
 
   return (
@@ -248,7 +295,38 @@ export function ChatPanel({ wsId, agentId }: { wsId: string; agentId: string }) 
           ) : (
             <ol ref={logRef} aria-live="polite" className="flex flex-col gap-4">
               {messages.map((message) => (
-                <ChatMessageBubble key={message.id} message={message} />
+                <ChatMessageBubble key={message.id} message={message}>
+                  {message.actionForm ? (
+                    <div className="mt-1 rounded-md border border-subtle bg-surface-raised p-4">
+                      <p className="text-sm font-medium text-primary">
+                        {message.actionForm.title}
+                      </p>
+                      {message.actionForm.description && (
+                        <p className="mt-1 text-xs text-tertiary">
+                          {message.actionForm.description}
+                        </p>
+                      )}
+                      <div className="mt-3">
+                        <ActionFieldForm
+                          fields={message.actionForm.fields}
+                          submitLabel={message.actionForm.submit_label}
+                          requireConsent={message.actionForm.require_consent}
+                          consentText={message.actionForm.consent_text}
+                          loading={submitAction.isPending}
+                          error={actionError}
+                          compact
+                          onSubmit={(values) =>
+                            submitInteractiveForm(
+                              message.id,
+                              message.actionForm as ActionFormPayload,
+                              values,
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </ChatMessageBubble>
               ))}
               {sendMessage.isPending && (
                 <ChatMessageBubble

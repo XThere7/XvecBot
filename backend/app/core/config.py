@@ -202,6 +202,18 @@ class Settings(BaseSettings):
     rerank_top_k: int = 5
     rrf_k: int = 60
 
+    # ── Website-to-Knowledge ─────────────────────────────────────────────────
+    # JavaScript rendering is opt-in: it requires Playwright + Chromium.
+    # Docker production enables it; local/test environments default to static
+    # extraction so no browser process is launched implicitly.
+    website_js_render_enabled: bool = False
+    website_browser_path: str = ""
+    # Only needed when Chromium cannot create its user namespace (common in
+    # minimal containers). Enabling this weakens the browser sandbox.
+    website_browser_no_sandbox: bool = False
+    website_render_timeout_ms: int = 20000
+    website_render_max_pages: int = 10
+
     # ── LLM (OpenRouter — sole provider) ─────────────────────────────────────
     # Cloud chat-completions API. Get a key at https://openrouter.ai/keys
     # and paste it into .env as OPENROUTER_API_KEY. Missing key raises on

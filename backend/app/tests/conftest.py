@@ -36,6 +36,9 @@ os.environ["UPLOAD_DIR"] = os.path.join(_TEST_DIR, "uploads")
 # Transactional email must never leave the process in the test suite: the
 # memory backend keeps messages in a list that the email tests inspect.
 os.environ["EMAIL_BACKEND"] = "memory"
+# Browser rendering is opt-in and requires Playwright + Chromium. The default
+# test suite exercises static extraction and monkeypatches the renderer.
+os.environ["WEBSITE_JS_RENDER_ENABLED"] = "false"
 # Existing suites create several agents per workspace and issue developer API
 # keys. Run them on Pro so subscription limits do not interfere; the dedicated
 # billing tests explicitly downgrade a workspace to Free.
@@ -50,6 +53,18 @@ from ..core.database import init_db, get_db
 from ..core.config import settings
 
 _APP_TABLES = (
+    "notification_messages",
+    "email_approvals",
+    "email_drafts",
+    "incoming_emails",
+    "email_integrations",
+    "support_escalations",
+    "form_submissions",
+    "custom_forms",
+    "data_submissions",
+    "data_collections",
+    "leads",
+    "agent_actions",
     "usage_monthly",
     "usage_events",
     "website_sync_jobs",
@@ -91,7 +106,7 @@ async def _isolated_db():
                 await db.execute("DELETE FROM alembic_version")
                 await db.execute(
                     "INSERT INTO alembic_version (version_num) VALUES (?)",
-                    ("0012_admin_panel",),
+                    ("0013_actions_and_email_agent",),
                 )
                 await db.commit()
             except Exception:

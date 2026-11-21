@@ -60,6 +60,21 @@ export function WebsiteSourcesSection({ wsId }: { wsId: string }) {
         });
       } else if (
         (previous === "syncing" || previous === "pending") &&
+        source.status === "partial"
+      ) {
+        toast.warning({
+          title: `${source.name} is partly indexed`,
+          description: truncate(
+            source.error_message ??
+              `${source.pages_indexed} page${
+                source.pages_indexed === 1 ? "" : "s"
+              } indexed; some content needs attention.`,
+            180,
+          ),
+          id: `website-${source.id}`,
+        });
+      } else if (
+        (previous === "syncing" || previous === "pending") &&
         source.status === "failed"
       ) {
         toast.error({

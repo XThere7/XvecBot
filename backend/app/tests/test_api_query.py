@@ -31,7 +31,9 @@ async def test_query_short_question_rejected(test_client):
 @pytest.mark.asyncio
 async def test_query_returns_answer_with_mock_llm(test_client):
     """Full query pipeline with MockGenerator (no API key needed)."""
-    with patch("app.services.query_service.build_generator") as mock_build:
+    from ..services import query_service
+
+    with patch.object(query_service, "build_generator") as mock_build:
         from ..llm.generator import MockGenerator
         mock_build.return_value = MockGenerator()
 

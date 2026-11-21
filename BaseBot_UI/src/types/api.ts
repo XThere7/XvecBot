@@ -187,8 +187,18 @@ export interface DocumentStatusResponse {
   chunk_count: number;
 }
 
-export type WebsiteSourceStatus = "pending" | "syncing" | "synced" | "failed";
-export type WebsitePageStatus = "discovered" | "indexed" | "failed" | "removed";
+export type WebsiteSourceStatus =
+  | "pending"
+  | "syncing"
+  | "synced"
+  | "partial"
+  | "failed";
+export type WebsitePageStatus =
+  | "discovered"
+  | "indexed"
+  | "failed"
+  | "duplicate"
+  | "removed";
 
 export interface WebsiteSource {
   id: string;
@@ -325,6 +335,10 @@ export interface AgentChatResponse {
   /** May be `[]` — retrieval found nothing. Not an error. */
   sources: Source[];
   model_used: string;
+  /** Action outcomes executed server-side (lead saved, escalation created, ...). */
+  actions?: ChatActionOutcome[];
+  /** Present when the agent asked the visitor to fill in an action form. */
+  action_form?: ActionFormPayload | null;
 }
 
 export interface WorkspaceChatResponse {
@@ -408,4 +422,327 @@ export interface TrainResponse {
 export interface AgentChatRequest {
   message: string;
   conversation_id?: string;
+}
+// ── Agent Actions / Sales / Support ──────────────────────────────────────────
+
+export type ActionType =
+  | "lead_capture"
+  | "data_collection"
+  | "custom_forms"
+  | "knowledge_support";
+
+export type ActionFieldType =
+  | "short_text"
+  | "long_text"
+  | "email"
+  | "phone"
+  | "number"
+  | "select"
+  | "boolean"
+  | "date";
+
+export interface ActionField {
+  key: string;
+  label: string;
+  type: ActionFieldType;
+  required: boolean;
+  max_length?: number;
+  options?: string[];
+  placeholder?: string;
+  help_text?: string;
+}
+
+export interface AgentActionConfig {
+  fields?: ActionField[];
+  require_consent?: boolean;
+  consent_text?: string | null;
+  notify_email?: string | null;
+  collection_id?: string | null;
+  form_id?: string | null;
+  reason_template?: string | null;
+  [key: string]: unknown;
+}
+
+export interface AgentAction {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  action_type: ActionType;
+  name: string;
+  description: string | null;
+  instructions: string | null;
+  /** Integer 0 | 1 from the backend. */
+  is_active: 0 | 1;
+  config: AgentActionConfig;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface ActionCatalogEntry {
+  action_type: ActionType;
+  category: string;
+  name: string;
+  description: string;
+  required_feature: string;
+  plan_available: boolean;
+  locked_reason: string | null;
+  default_config: AgentActionConfig;
+  action: AgentAction | null;
+}
+
+export interface AgentActionsResponse {
+  catalog: ActionCatalogEntry[];
+  plan_features: Record<string, boolean>;
+}
+
+export interface ActionFormPayload {
+  kind: "action_form";
+  action_id: string;
+  action_type: ActionType;
+  title: string;
+  description: string;
+  fields: ActionField[];
+  require_consent: boolean;
+  consent_text?: string | null;
+  submit_label: string;
+}
+
+export interface ChatActionOutcome {
+  type: string;
+  action_type?: string;
+  label?: string;
+  id?: string;
+  errors?: string[];
+  status?: string;
+}
+
+export interface Lead {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  action_id: string | null;
+  conversation_id: string | null;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  interest: string | null;
+  budget: string | null;
+  notes: string | null;
+  custom_fields: Record<string, unknown>;
+  status: "complete" | "partial";
+  consent_given: 0 | 1;
+  consent_text: string | null;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface LeadStats {
+  total: number;
+  complete: number;
+  partial: number;
+  last_7_days: number;
+}
+
+export interface LeadListResponse {
+  items: Lead[];
+  total: number;
+  limit: number;
+  offset: number;
+  stats: LeadStats;
+}
+
+export interface DataCollection {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  name: string;
+  description: string | null;
+  instructions: string | null;
+  fields: ActionField[];
+  is_active: 0 | 1;
+  allow_partial: 0 | 1;
+  require_consent: 0 | 1;
+  submission_count: number;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface DataSubmission {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  collection_id: string;
+  conversation_id: string | null;
+  data: Record<string, unknown>;
+  status: string;
+  created_at: ISODate;
+}
+
+export interface SubmissionListResponse {
+  items: DataSubmission[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CustomForm {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  title: string;
+  description: string | null;
+  fields: ActionField[];
+  submit_label: string;
+  is_active: 0 | 1;
+  require_consent: 0 | 1;
+  public_token: string;
+  submission_count: number;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface PublicForm {
+  title: string;
+  description: string | null;
+  fields: ActionField[];
+  submit_label: string;
+  token: string;
+  agent_name: string;
+  require_consent: 0 | 1;
+}
+
+export interface FormSubmission {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  form_id: string;
+  conversation_id: string | null;
+  data: Record<string, unknown>;
+  status: string;
+  created_at: ISODate;
+}
+
+export interface Escalation {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  conversation_id: string | null;
+  reason: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  status: "open" | "contacted" | "closed";
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface EscalationListResponse {
+  items: Escalation[];
+  total: number;
+  limit: number;
+  offset: number;
+  stats: { total: number; open: number; contacted: number; closed: number };
+}
+
+// ── Email Agent ──────────────────────────────────────────────────────────────
+
+export type EmailProvider = "simulated" | "imap" | "gmail_oauth" | "microsoft_oauth";
+export type EmailDraftStatus =
+  | "processing"
+  | "draft_ready"
+  | "approved"
+  | "sent"
+  | "rejected"
+  | "failed";
+
+export interface EmailIntegration {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  provider: EmailProvider;
+  email_address: string;
+  display_name: string | null;
+  status: string;
+  filters: Record<string, unknown>;
+  automation_enabled: 0 | 1;
+  notification_phone: string | null;
+  has_credentials: boolean;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface IncomingEmail {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  integration_id: string;
+  provider_message_id: string;
+  sender_name: string | null;
+  sender_email: string;
+  subject: string;
+  body_text: string;
+  received_at: ISODate;
+  status: string;
+  error_message: string | null;
+  created_at: ISODate;
+}
+
+export interface EmailDraft {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  integration_id: string;
+  email_id: string;
+  body: string;
+  status: EmailDraftStatus;
+  model_used: string | null;
+  error_message: string | null;
+  approved_at: ISODate | null;
+  sent_at: ISODate | null;
+  /** 1 only for the simulated send path; the UI labels it accordingly. */
+  sent_simulated: 0 | 1;
+  created_at: ISODate;
+  updated_at: ISODate;
+  email: IncomingEmail | null;
+}
+
+export interface EmailDraftListResponse {
+  items: EmailDraft[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SimulatedSms {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  channel: "sms";
+  provider: "simulated";
+  recipient: string;
+  body: string;
+  status: string;
+  related_type: string | null;
+  related_id: string | null;
+  error_message: string | null;
+  created_at: ISODate;
+  simulated_at: ISODate | null;
+}
+
+export interface EmailStats {
+  incoming_total: number;
+  drafts_ready: number;
+  awaiting_approval: number;
+  sent_simulated: number;
+  rejected: number;
+  failed: number;
+}
+
+export interface EmailOverview {
+  integration: EmailIntegration | null;
+  stats: EmailStats;
+  notifications: SimulatedSms[];
+  sending_mode: "simulated";
+  sms_mode: "simulated";
 }

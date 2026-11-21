@@ -28,7 +28,9 @@ from .api import (
     billing,
     developer,
     documents,
+    email_agent,
     embed_tokens,
+    engagement,
     health,
     password_reset,
     public,
@@ -226,6 +228,8 @@ def create_app() -> FastAPI:
     app.include_router(websites.router)
     app.include_router(social_media.router)
     app.include_router(agents.router)
+    app.include_router(engagement.router)
+    app.include_router(email_agent.router)
     app.include_router(public.router)
     app.include_router(embed_tokens.router)
     # Legacy global API. Disabled in production because its single API_KEY

@@ -19,7 +19,13 @@ from ..core.config import settings
 from ..core.database import get_db
 from ..core.logging import get_logger
 from ..models.embed_token import PublicAgentInfo
-from ..services import admin_service, embed_service
+from ..services import (
+    action_service,
+    admin_service,
+    capture_service,
+    embed_service,
+    plan_service,
+)
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/public", tags=["Public Widget"])
@@ -157,11 +163,23 @@ async def public_chat(
 
     # Strip internal fields — the public surface exposes only these three.
     # See the audit note above for the full list of what is withheld.
-    return {
+    payload = {
         "answer": result["answer"],
         "sources": result["sources"],
         "conversation_id": result["conversation_id"],
     }
+    # Action outcomes are whitelisted: labels and types only, never internal
+    # lead/submission ids. The form payload contains only owner-defined fields
+    # that are meant to be shown to the visitor.
+    if result.get("actions"):
+        payload["actions"] = [
+            {"type": item.get("type"), "label": item.get("label")}
+            for item in result["actions"]
+            if item.get("type") in ("lead_saved", "data_saved", "support_escalated", "form_requested")
+        ]
+    if result.get("action_form") is not None:
+        payload["action_form"] = result["action_form"]
+    return payload
 
 
 @router.get("/agent/{token}", summary="Public agent info for widget UI (no auth)")
@@ -237,3 +255,120 @@ async def public_qr(token: str):
             "Content-Disposition": f'inline; filename="botbase-chat-qr.png"',
         },
     )
+
+
+# ── Public custom forms ───────────────────────────────────────────────────────
+
+
+class PublicFormSubmit(BaseModel):
+    data: dict = Field(default_factory=dict)
+
+
+class PublicActionSubmit(BaseModel):
+    token: str = Field(..., min_length=1)
+    action_id: str = Field(..., min_length=1)
+    conversation_id: Optional[str] = None
+    data: dict = Field(default_factory=dict)
+
+
+@router.get("/forms/{token}", summary="Public custom form definition (no auth)")
+async def public_form(token: str):
+    async with get_db() as db:
+        form = await capture_service.get_form_by_token(db, token)
+        if form is None or not form.get("is_active"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Form not found"
+            )
+        await admin_service.require_platform_available(db)
+        await admin_service.require_owner_active(db, form["workspace_id"])
+        workspace = await plan_service.get_workspace(db, form["workspace_id"])
+        plan = (
+            await plan_service.plan_for_workspace(db, workspace)
+            if workspace is not None
+            else None
+        )
+        if workspace is None or plan is None or not plan_service.feature_enabled(
+            plan, "actions"
+        ):
+            # A downgraded workspace's published forms stop collecting data.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Form not found"
+            )
+        async with db.execute(
+            "SELECT name FROM agents WHERE id = ?", (form["agent_id"],)
+        ) as cur:
+            agent_row = await cur.fetchone()
+        _check_rate_limit(f"form:{token}")
+    return {
+        "title": form["title"],
+        "description": form.get("description"),
+        "fields": form["fields"],
+        "submit_label": form["submit_label"],
+        "token": token,
+        "agent_name": (agent_row["name"] if agent_row is not None else "Assistant"),
+        "require_consent": form.get("require_consent", 1),
+    }
+
+
+@router.post("/forms/{token}", summary="Submit a public custom form (no auth)")
+async def submit_public_form(token: str, payload: PublicFormSubmit):
+    async with get_db() as db:
+        await admin_service.require_platform_available(db)
+        form = await capture_service.get_form_by_token(db, token)
+        if form is None or not form.get("is_active"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Form not found"
+            )
+        await admin_service.require_owner_active(db, form["workspace_id"])
+        workspace = await plan_service.get_workspace(db, form["workspace_id"])
+        plan = (
+            await plan_service.plan_for_workspace(db, workspace)
+            if workspace is not None
+            else None
+        )
+        if workspace is None or plan is None or not plan_service.feature_enabled(
+            plan, "actions"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Form not found"
+            )
+        _check_rate_limit(f"form-submit:{token}")
+        return await capture_service.submit_public_form(db, token, payload.data)
+
+
+@router.post("/action", summary="Submit an interactive agent action (no auth)")
+async def submit_public_action(payload: PublicActionSubmit, request: Request):
+    origin = request.headers.get("origin")
+    async with get_db() as db:
+        await admin_service.require_platform_available(db)
+        _embed, agent = await embed_service.validate_public_request(
+            db, payload.token, origin
+        )
+        await admin_service.require_owner_active(db, agent["workspace_id"])
+        _check_rate_limit(f"action:{payload.token}")
+        if payload.conversation_id:
+            async with db.execute(
+                "SELECT agent_id FROM conversations WHERE id = ?",
+                (payload.conversation_id,),
+            ) as cur:
+                conversation = await cur.fetchone()
+            if conversation is None or conversation["agent_id"] != agent["id"]:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found",
+                )
+        workspace = await plan_service.get_workspace(db, agent["workspace_id"])
+        if workspace is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
+            )
+        result = await action_service.submit_action_form(
+            db,
+            workspace,
+            agent["id"],
+            payload.action_id,
+            payload.data,
+            payload.conversation_id,
+        )
+    # Visitors get a confirmation, not internal record ids.
+    return {"kind": result.get("kind"), "label": result.get("label")}

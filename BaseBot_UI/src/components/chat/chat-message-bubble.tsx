@@ -4,13 +4,14 @@ import * as React from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Bot, RotateCw, User } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { modelLabel } from "@/lib/reference-data";
 import { SourceChips } from "./source-chips";
 import { TypingIndicator } from "./typing-indicator";
-import type { Source } from "@/types/api";
+import type { ActionFormPayload, ChatActionOutcome, Source } from "@/types/api";
 
 export type ChatMessage = {
   id: string;
@@ -20,12 +21,15 @@ export type ChatMessage = {
   createdAt?: string;
   modelUsed?: string;
   isPending?: boolean;
+  actionForm?: ActionFormPayload | null;
+  actions?: ChatActionOutcome[];
 };
 
 export type ChatMessageBubbleProps = {
   message: ChatMessage;
   readOnly?: boolean;
   onRetry?: () => void;
+  children?: React.ReactNode;
 };
 
 /**
@@ -36,6 +40,7 @@ export function ChatMessageBubble({
   message,
   readOnly = false,
   onRetry,
+  children,
 }: ChatMessageBubbleProps) {
   const reduceMotion = useReducedMotion();
   const isUser = message.role === "user";
@@ -96,6 +101,25 @@ export function ChatMessageBubble({
         {message.role === "assistant" && !message.isPending && (
           <>
             <SourceChips sources={message.sources} />
+            {(message.actions?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {message.actions?.map((action, index) => (
+                  <Badge
+                    key={`${action.type}-${index}`}
+                    tone={
+                      action.type === "validation_error" || action.type === "error"
+                        ? "danger"
+                        : action.type === "unavailable"
+                          ? "neutral"
+                          : "success"
+                    }
+                    size="sm"
+                  >
+                    {action.label || action.type}
+                  </Badge>
+                ))}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               {/* The raw model id is internal — show only the customer-facing label. */}
               {message.modelUsed && (
@@ -115,6 +139,7 @@ export function ChatMessageBubble({
                 />
               )}
             </div>
+            {children}
           </>
         )}
 

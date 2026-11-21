@@ -27,6 +27,9 @@ import { useAgent, useDeleteAgent, useToggleAgentActive } from "@/hooks/use-agen
 
 const TABS: { id: AgentTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "actions", label: "Actions" },
+  { id: "capture", label: "Capture" },
+  { id: "email", label: "Email" },
   { id: "media", label: "Media" },
   { id: "test", label: "Test" },
   { id: "conversations", label: "Conversations" },

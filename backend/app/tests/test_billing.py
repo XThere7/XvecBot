@@ -142,7 +142,13 @@ async def test_plan_catalogue_is_public_and_matches_strategy():
     assert free["features"]["developer_api"] is False
     assert standard["features"]["developer_api"] is True
     assert pro["features"]["developer_api"] is True
-    assert "lead_forms" in free["coming_soon"]
+    # Lead capture/data collection/custom forms are Standard+ and are now
+    # shipped, so they must not be advertised as "coming soon".
+    assert free["features"]["lead_forms"] is False
+    assert free["features"]["actions"] is False
+    assert standard["features"]["actions"] is True
+    assert "lead_forms" not in free["coming_soon"]
+    assert "actions" not in standard["coming_soon"]
     assert "whatsapp" in pro["coming_soon"]
 
 

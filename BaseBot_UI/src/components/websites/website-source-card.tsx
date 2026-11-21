@@ -146,10 +146,15 @@ export function WebsiteSourceCard({
         </div>
       </dl>
 
-      {source.status === "failed" && source.error_message && (
+      {(source.status === "failed" || source.status === "partial") &&
+        source.error_message && (
         <AlertBanner
-          tone="danger"
-          title="We could not finish scanning this website"
+          tone={source.status === "partial" ? "warning" : "danger"}
+          title={
+            source.status === "partial"
+              ? "The scan finished with limitations"
+              : "We could not finish scanning this website"
+          }
           className="mt-4"
           action={
             <Button
